@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, ipcMain, dialog, protocol, session, clipboard } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, dialog, protocol, session, clipboard, net } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -82,9 +82,10 @@ function isTrustedSender(event) {
 }
 
 function resolveTargetDirectory(folder, subFolder) {
-  let resolved = typeof folder === 'string' && folder.trim() && !folder.includes('\0')
-    ? path.resolve(folder)
-    : app.getPath('downloads');
+  let resolved =
+    typeof folder === 'string' && folder.trim() && !folder.includes('\0')
+      ? path.resolve(folder)
+      : app.getPath('downloads');
 
   if (typeof subFolder === 'string' && subFolder.trim() && !subFolder.includes('\0')) {
     const safe = path.basename(subFolder.trim().replace(/[<>:"/\\|?*]+/g, '_'));
@@ -100,7 +101,7 @@ function getSafeFileName(fileName) {
     return null;
   }
   const safe = path.basename(fileName);
-  return (!safe || safe === '.' || safe === '..') ? null : safe;
+  return !safe || safe === '.' || safe === '..' ? null : safe;
 }
 
 function parseMediaPath(requestUrl) {
@@ -226,7 +227,14 @@ function configureAppSession() {
   appSession.setPermissionCheckHandler(() => false);
 
   appSession.webRequest.onBeforeSendHeaders(
-    { urls: ['https://*.soundcloud.com/*', 'https://*.sndcdn.com/*', 'https://*.soundcloud.cloud/*'] },
+    {
+      urls: [
+        'https://*.soundcloud.com/*',
+        'https://soundcloud.com/*',
+        'https://*.sndcdn.com/*',
+        'https://*.soundcloud.cloud/*'
+      ]
+    },
     (details, callback) => {
       details.requestHeaders['Origin'] = 'https://soundcloud.com';
       details.requestHeaders['Referer'] = 'https://soundcloud.com/';
@@ -235,7 +243,14 @@ function configureAppSession() {
   );
 
   appSession.webRequest.onHeadersReceived(
-    { urls: ['https://*.soundcloud.com/*', 'https://*.sndcdn.com/*', 'https://*.soundcloud.cloud/*'] },
+    {
+      urls: [
+        'https://*.soundcloud.com/*',
+        'https://soundcloud.com/*',
+        'https://*.sndcdn.com/*',
+        'https://*.soundcloud.cloud/*'
+      ]
+    },
     (details, callback) => {
       const responseHeaders = { ...details.responseHeaders };
       responseHeaders['access-control-allow-origin'] = ['*'];
@@ -244,6 +259,109 @@ function configureAppSession() {
       callback({ responseHeaders });
     }
   );
+}
+
+function extractId3Text(headerBuf, frameId) {
+  try {
+    const idx = headerBuf.indexOf(frameId);
+    if (idx === -1 || idx + 10 > headerBuf.length) return null;
+    const frameSize = headerBuf.readUInt32BE(idx + 4);
+    if (frameSize <= 1 || idx + 10 + frameSize > headerBuf.length) return null;
+    const frameData = headerBuf.subarray(idx + 10, idx + 10 + frameSize);
+    const encoding = frameData[0];
+    if (encoding === 0x01 && frameData.length > 3) {
+      let textBytes = frameData.subarray(1);
+      if (textBytes.length >= 2 && textBytes[0] === 0xff && textBytes[1] === 0xfe) {
+        textBytes = textBytes.subarray(2);
+      }
+      return Buffer.from(textBytes).toString('utf16le').replace(/\0+$/, '').trim();
+    } else if (encoding === 0x00) {
+      return Buffer.from(frameData.subarray(1)).toString('latin1').replace(/\0+$/, '').trim();
+    } else if (encoding === 0x03) {
+      return Buffer.from(frameData.subarray(1)).toString('utf8').replace(/\0+$/, '').trim();
+    }
+  } catch {}
+  return null;
+}
+
+function extractArtworkFromMp3(fullPath) {
+  let fd = null;
+  try {
+    if (!fs.existsSync(fullPath)) return null;
+    fd = fs.openSync(fullPath, 'r');
+    let headerBuf = Buffer.alloc(128 * 1024);
+    const bytesRead = fs.readSync(fd, headerBuf, 0, headerBuf.length, 0);
+
+    if (bytesRead > 10 && headerBuf[0] === 0x49 && headerBuf[1] === 0x44 && headerBuf[2] === 0x33) {
+      const tagSize =
+        ((headerBuf[6] & 0x7f) << 21) |
+        ((headerBuf[7] & 0x7f) << 14) |
+        ((headerBuf[8] & 0x7f) << 7) |
+        (headerBuf[9] & 0x7f);
+      if (tagSize + 10 > headerBuf.length && tagSize < 10 * 1024 * 1024) {
+        headerBuf = Buffer.alloc(tagSize + 10);
+        fs.readSync(fd, headerBuf, 0, tagSize + 10, 0);
+      }
+      fs.closeSync(fd);
+      fd = null;
+
+      const apicIdx = headerBuf.indexOf('APIC');
+      if (apicIdx !== -1) {
+        const frameSize = headerBuf.readUInt32BE(apicIdx + 4);
+        if (apicIdx + 10 + frameSize <= headerBuf.length) {
+          const frameData = headerBuf.subarray(apicIdx + 10, apicIdx + 10 + frameSize);
+          const jpegStart = frameData.indexOf(Buffer.from([0xff, 0xd8, 0xff]));
+          const pngStart = frameData.indexOf(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+          const imgStart = jpegStart !== -1 ? jpegStart : pngStart;
+          const mime = jpegStart !== -1 ? 'image/jpeg' : 'image/png';
+
+          if (imgStart !== -1) {
+            const imgBuf = frameData.subarray(imgStart);
+            return `data:${mime};base64,${imgBuf.toString('base64')}`;
+          }
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {}
+    }
+  }
+}
+
+async function findSoundCloudClientId() {
+  try {
+    const resp = await net.fetch('https://soundcloud.com', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+    });
+    if (!resp.ok) return null;
+    const html = await resp.text();
+    const scriptRegex = /https:\/\/[^"'\s]+sndcdn\.com\/[^"'\s]+\.js/g;
+    const scripts = Array.from(new Set(html.match(scriptRegex) || []));
+
+    for (const scriptUrl of scripts.reverse()) {
+      try {
+        const sResp = await net.fetch(scriptUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        });
+        if (!sResp.ok) continue;
+        const js = await sResp.text();
+        const m = js.match(/["']?client_id["']?\s*[:=]\s*["']([a-zA-Z0-9]{32})["']/);
+        if (m && m[1]) {
+          return m[1];
+        }
+      } catch {}
+    }
+  } catch (err) {
+    console.warn('[findSoundCloudClientId]', err);
+  }
+  return null;
 }
 
 function registerIpcHandlers() {
@@ -334,7 +452,7 @@ function registerIpcHandlers() {
 
       const files = await fs.promises.readdir(resolvedFolder, { recursive: true });
       const supported = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.opus'];
-      const mediaFiles = files.filter(f => supported.includes(path.extname(f).toLowerCase()));
+      const mediaFiles = files.filter((f) => supported.includes(path.extname(f).toLowerCase()));
 
       const list = [];
       for (const relPath of mediaFiles) {
@@ -357,7 +475,7 @@ function registerIpcHandlers() {
           title = parts.slice(1).join(' - ').trim();
         }
 
-        let artworkDataUrl = null;
+        let hasCover = false;
         let fd = null;
         try {
           fd = fs.openSync(fullPath, 'r');
@@ -365,7 +483,11 @@ function registerIpcHandlers() {
           let bytesRead = fs.readSync(fd, headerBuf, 0, headerBuf.length, 0);
 
           if (bytesRead > 10 && headerBuf[0] === 0x49 && headerBuf[1] === 0x44 && headerBuf[2] === 0x33) {
-            const tagSize = ((headerBuf[6] & 0x7F) << 21) | ((headerBuf[7] & 0x7F) << 14) | ((headerBuf[8] & 0x7F) << 7) | (headerBuf[9] & 0x7F);
+            const tagSize =
+              ((headerBuf[6] & 0x7f) << 21) |
+              ((headerBuf[7] & 0x7f) << 14) |
+              ((headerBuf[8] & 0x7f) << 7) |
+              (headerBuf[9] & 0x7f);
             if (tagSize + 10 > headerBuf.length && tagSize < 10 * 1024 * 1024) {
               headerBuf = Buffer.alloc(tagSize + 10);
               bytesRead = fs.readSync(fd, headerBuf, 0, tagSize + 10, 0);
@@ -373,26 +495,23 @@ function registerIpcHandlers() {
             fs.closeSync(fd);
             fd = null;
 
-            const apicIdx = headerBuf.indexOf('APIC');
-            if (apicIdx !== -1) {
-              const frameSize = headerBuf.readUInt32BE(apicIdx + 4);
-              const frameData = headerBuf.subarray(apicIdx + 10, apicIdx + 10 + frameSize);
-              const jpegStart = frameData.indexOf(Buffer.from([0xFF, 0xD8, 0xFF]));
-              const pngStart = frameData.indexOf(Buffer.from([0x89, 0x50, 0x4E, 0x47]));
+            // Read ID3 tags
+            const id3Title = extractId3Text(headerBuf, 'TIT2');
+            const id3Artist = extractId3Text(headerBuf, 'TPE1');
+            if (id3Title) title = id3Title;
+            if (id3Artist) artist = id3Artist;
 
-              const imgStart = jpegStart !== -1 ? jpegStart : pngStart;
-              const mime = jpegStart !== -1 ? 'image/jpeg' : 'image/png';
-
-              if (imgStart !== -1) {
-                const imgBuf = frameData.subarray(imgStart);
-                artworkDataUrl = `data:${mime};base64,${imgBuf.toString('base64')}`;
-              }
+            // Check cover
+            if (headerBuf.indexOf('APIC') !== -1) {
+              hasCover = true;
             }
           }
-        } catch (e) {
+        } catch {
         } finally {
           if (fd !== null) {
-            try { fs.closeSync(fd); } catch {}
+            try {
+              fs.closeSync(fd);
+            } catch {}
           }
         }
 
@@ -402,7 +521,7 @@ function registerIpcHandlers() {
           fileName,
           title,
           artist,
-          artworkDataUrl,
+          hasCover,
           duration: 0
         });
       }
@@ -412,6 +531,17 @@ function registerIpcHandlers() {
       console.error('[scan-library]', err);
       return [];
     }
+  });
+
+  ipcMain.handle('read-track-cover', async (event, filePath) => {
+    if (!isTrustedSender(event)) return null;
+    if (typeof filePath !== 'string' || !filePath.trim() || filePath.includes('\0')) return null;
+    return extractArtworkFromMp3(filePath);
+  });
+
+  ipcMain.handle('refresh-soundcloud-client-id', async (event) => {
+    if (!isTrustedSender(event)) return null;
+    return findSoundCloudClientId();
   });
 }
 

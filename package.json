@@ -12,7 +12,10 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win zip --x64 --publish never",
-    "build:exe": "electron-builder --win portable --x64 --publish never"
+    "build:exe": "electron-builder --win portable --x64 --publish never",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{js,html,css,json}\""
   },
   "keywords": [
     "music",
@@ -23,8 +26,12 @@
     "soundcloud"
   ],
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1"
   },
   "build": {
     "appId": "com.magnitola.downloader",
@@ -50,6 +57,8 @@
       "main.js",
       "preload.js",
       "lame.min.js",
+      "css/**/*",
+      "js/**/*",
       "magnitolalogo.jpg",
       "synclinelogo.jpg",
       "ru.png",

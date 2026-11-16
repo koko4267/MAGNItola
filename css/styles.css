@@ -448,6 +448,11 @@ body {
   background-color: var(--accent-red);
 }
 
+.queue-status-drm {
+  color: var(--accent-gold);
+  background-color: #4a2218;
+}
+
 .queue-item-title {
   flex: 1;
   min-width: 0;

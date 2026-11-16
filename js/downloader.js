@@ -119,7 +119,15 @@ function renderDownloadQueue() {
     if (status === 'done') statusText = window.L?.queueStatusDone || 'DONE';
     if (status === 'skip') statusText = window.L?.queueStatusSkip || 'SKIP';
     if (status === 'fail') statusText = window.L?.queueStatusFail || 'FAIL';
+    if (status === 'drm') statusText = window.L?.queueStatusDrm || 'DRM';
     statusBadge.textContent = statusText;
+    if (status === 'drm') {
+      statusBadge.title = window.L?.drmProtected || 'Protected by DRM (SoundCloud Go+)';
+    } else if (status === 'fail') {
+      statusBadge.title = window.L?.failed || 'Download failed';
+    } else if (status === 'skip') {
+      statusBadge.title = window.L?.alreadyExists || 'Already exists';
+    }
 
     const titleEl = document.createElement('span');
     titleEl.className = 'queue-item-title';
@@ -157,7 +165,17 @@ function updateQueueItemStatus(index, status) {
       if (status === 'done') statusText = window.L?.queueStatusDone || 'DONE';
       if (status === 'skip') statusText = window.L?.queueStatusSkip || 'SKIP';
       if (status === 'fail') statusText = window.L?.queueStatusFail || 'FAIL';
+      if (status === 'drm') statusText = window.L?.queueStatusDrm || 'DRM';
       badge.textContent = statusText;
+      if (status === 'drm') {
+        badge.title = window.L?.drmProtected || 'Protected by DRM (SoundCloud Go+)';
+      } else if (status === 'fail') {
+        badge.title = window.L?.failed || 'Download failed';
+      } else if (status === 'skip') {
+        badge.title = window.L?.alreadyExists || 'Already exists';
+      } else {
+        badge.title = '';
+      }
     }
     if (status === 'down') {
       row.scrollIntoView({ block: 'nearest' });
@@ -377,9 +395,29 @@ async function downloadTrack(track, index, total, subFolder = null, setMeta = {}
       return false;
     }
 
+    const isDrmProtocol = (protocol) => protocol === 'cbc-encrypted-hls' || protocol === 'ctr-encrypted-hls';
+
+    const hasUnencrypted = transcodings.some((t) => !isDrmProtocol(t.format?.protocol));
+    if (!hasUnencrypted) {
+      if (lblCurrentStatus) {
+        lblCurrentStatus.textContent = `${window.L.currentStatus || 'Current download:'} ${window.L.drmProtected || 'Protected by DRM (SoundCloud Go+)'}`;
+      }
+      setDownloadProgress(0);
+      if (downloadSpeedStats) downloadSpeedStats.textContent = 'DRM';
+      if (downloadSizeStats) downloadSizeStats.textContent = '-- / -- MB';
+      updateQueueItemStatus(index - 1, 'drm');
+      await new Promise((r) => setTimeout(r, 120));
+      return false;
+    }
+
     const sorted = [...transcodings].sort((a, b) => {
       let scoreA = 0;
       let scoreB = 0;
+      const isDrmA = isDrmProtocol(a.format?.protocol);
+      const isDrmB = isDrmProtocol(b.format?.protocol);
+      if (!isDrmA) scoreA += 10000;
+      if (!isDrmB) scoreB += 10000;
+
       if (a.format?.protocol === 'progressive' && a.format?.mime_type === 'audio/mpeg') scoreA += 500;
       if (b.format?.protocol === 'progressive' && b.format?.mime_type === 'audio/mpeg') scoreB += 500;
       if (a.preset === 'aac_160k') scoreA += 300;
@@ -472,6 +510,11 @@ async function downloadTrack(track, index, total, subFolder = null, setMeta = {}
         const hlsResp = await window.fetchWithRetry(audioCdnUrl);
         if (!hlsResp.ok) continue;
         let m3u8Text = await hlsResp.text();
+
+        // Skip DRM-encrypted HLS streams
+        if (m3u8Text.includes('METHOD=SAMPLE-AES') || m3u8Text.includes('com.apple.streamingkeydelivery')) {
+          continue;
+        }
 
         let targetPlaylistUrl = audioCdnUrl;
         if (m3u8Text.includes('#EXT-X-STREAM-INF')) {
@@ -583,7 +626,8 @@ async function downloadTrack(track, index, total, subFolder = null, setMeta = {}
     }
 
     if (!audioBuffer) {
-      updateQueueItemStatus(index - 1, 'fail');
+      const isAllDrm = transcodings.every((t) => isDrmProtocol(t.format?.protocol));
+      updateQueueItemStatus(index - 1, isAllDrm ? 'drm' : 'fail');
       return false;
     }
 

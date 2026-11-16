@@ -35,9 +35,8 @@ window.LOCALES = {
     queueStatusDone: 'DONE',
     queueStatusSkip: 'SKIP',
     queueStatusFail: 'FAIL',
-    updateBanner: '✦ New version available: ',
-    updateDownload: 'Get update',
-    updateDismiss: '✕',
+    queueStatusDrm: 'DRM',
+    drmProtected: 'Protected by DRM (SoundCloud Go+)',
     quotes: [
       'God invented computers',
       'Do you want to play a horror game?',
@@ -79,9 +78,8 @@ window.LOCALES = {
     queueStatusDone: 'ГОТОВО',
     queueStatusSkip: 'ПРОПУСК',
     queueStatusFail: 'СБОЙ',
-    updateBanner: '✦ Доступна новая версия: ',
-    updateDownload: 'Обновить',
-    updateDismiss: '✕',
+    queueStatusDrm: 'DRM',
+    drmProtected: 'Защищено DRM (SoundCloud Go+)',
     quotes: [
       'Компьютеры придумал господь Бог',
       'Хочешь поиграть в хоррор?',
@@ -116,7 +114,6 @@ function setLanguage(lang) {
   const currentTrackTitle = document.getElementById('currentTrackTitle');
   const quoteDisplay = document.getElementById('quoteDisplay');
   const queueHeaderTitle = document.getElementById('queueHeaderTitle');
-  const btnUpdateDownload = document.getElementById('btnUpdateDownload');
 
   if (langLabel) langLabel.textContent = lang.toUpperCase();
   if (flagImg) flagImg.src = lang === 'ru' ? 'ru.png' : 'us.png';
@@ -128,7 +125,10 @@ function setLanguage(lang) {
   if (btnStopDownload) btnStopDownload.textContent = L.stopDownload;
   if (btnBrowseFolder) btnBrowseFolder.textContent = L.browse;
   if (queueHeaderTitle) queueHeaderTitle.textContent = L.queueTitle;
-  if (btnUpdateDownload) btnUpdateDownload.textContent = L.updateDownload;
+
+  if (typeof window.renderDownloadQueue === 'function') {
+    window.renderDownloadQueue();
+  }
 
   if (typeof window.updateSavePathDisplay === 'function') {
     window.updateSavePathDisplay();

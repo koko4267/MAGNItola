@@ -9,6 +9,5 @@ window.APP_CONFIG = {
   QUOTE_ROTATION_INTERVAL_MS: 2000,
   TRACK_ROW_HEIGHT_PX: 58,
   VIRTUAL_OVERSCAN_COUNT: 4,
-  GITHUB_REPO: 'koko4267/magnitola',
   SUPPORTED_AUDIO_EXTENSIONS: ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.opus']
 };

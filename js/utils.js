@@ -1,15 +1,5 @@
 // Utility functions
 
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 function sanitizeFileName(name) {
   return (name || 'Track')
     .replace(/[<>:"/\\|?*]+/g, '_')
@@ -86,7 +76,6 @@ async function fetchWithRetry(
   throw lastError || new Error(`Fetch failed after ${retries} attempts: ${url}`);
 }
 
-window.escapeHtml = escapeHtml;
 window.sanitizeFileName = sanitizeFileName;
 window.sanitizeFolderName = sanitizeFolderName;
 window.getCoverArtUrl = getCoverArtUrl;

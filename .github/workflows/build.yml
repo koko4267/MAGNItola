@@ -56,11 +56,13 @@ jobs:
       - name: Build for Windows x64
         run: npm run build
 
-      - name: Upload Artifact
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: MAGNItola-Windows
-          path: dist/MAGNItola-Windows.zip
+          path: |
+            dist/*.exe
+            dist/*.zip
           if-no-files-found: error
 
       - name: Publish GitHub Release
@@ -68,7 +70,9 @@ jobs:
         with:
           tag_name: ${{ steps.vars.outputs.tag_name }}
           name: MAGNItola ${{ steps.vars.outputs.tag_name }}
-          files: dist/MAGNItola-Windows.zip
+          files: |
+            dist/*.exe
+            dist/*.zip
           generate_release_notes: true
           fail_on_unmatched_files: true
         env:

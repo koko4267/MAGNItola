@@ -10,21 +10,21 @@ try {
 } catch {}
 app.setPath('userData', tempUserData);
 
-function cleanStaleTempDirs() {
+async function cleanStaleTempDirs() {
   try {
     const tmp = os.tmpdir();
-    const entries = fs.readdirSync(tmp);
+    const entries = await fs.promises.readdir(tmp);
+    const prefix = 'magnitola-session-';
+    const currentName = `magnitola-session-${process.pid}`;
     for (const name of entries) {
-      if (name.startsWith('magnitola-session-') && name !== `magnitola-session-${process.pid}`) {
+      if (name.startsWith(prefix) && name !== currentName) {
         try {
-          fs.rmSync(path.join(tmp, name), { recursive: true, force: true });
+          await fs.promises.rm(path.join(tmp, name), { recursive: true, force: true });
         } catch {}
       }
     }
   } catch {}
 }
-
-cleanStaleTempDirs();
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -450,20 +450,41 @@ function registerIpcHandlers() {
       const stat = await fs.promises.stat(resolvedFolder);
       if (!stat.isDirectory()) return [];
 
-      const files = await fs.promises.readdir(resolvedFolder, { recursive: true });
-      const supported = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.opus'];
-      const mediaFiles = files.filter((f) => supported.includes(path.extname(f).toLowerCase()));
+      const supported = new Set(['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.opus']);
+      const entries = await fs.promises.readdir(resolvedFolder, { withFileTypes: true });
+      const mediaFiles = [];
+
+      for (const entry of entries) {
+        if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase();
+          if (supported.has(ext)) {
+            mediaFiles.push(path.join(resolvedFolder, entry.name));
+          }
+        } else if (entry.isDirectory()) {
+          const dirName = entry.name.toLowerCase();
+          if (dirName.startsWith('.') || dirName === 'node_modules' || dirName === 'appdata') {
+            continue;
+          }
+          try {
+            const subEntries = await fs.promises.readdir(path.join(resolvedFolder, entry.name), {
+              withFileTypes: true
+            });
+            for (const sub of subEntries) {
+              if (sub.isFile()) {
+                const ext = path.extname(sub.name).toLowerCase();
+                if (supported.has(ext)) {
+                  mediaFiles.push(path.join(resolvedFolder, entry.name, sub.name));
+                }
+              }
+            }
+          } catch {}
+        }
+      }
 
       const list = [];
-      for (const relPath of mediaFiles) {
-        const fullPath = path.resolve(resolvedFolder, relPath);
-        try {
-          const fileStat = await fs.promises.stat(fullPath);
-          if (!fileStat.isFile()) continue;
-        } catch {
-          continue;
-        }
+      const headerBuf = Buffer.alloc(8192);
 
+      for (const fullPath of mediaFiles) {
         const fileName = path.basename(fullPath);
         const baseName = path.parse(fileName).name;
         let artist = 'MAGNItola';
@@ -479,29 +500,14 @@ function registerIpcHandlers() {
         let fd = null;
         try {
           fd = fs.openSync(fullPath, 'r');
-          let headerBuf = Buffer.alloc(128 * 1024);
-          let bytesRead = fs.readSync(fd, headerBuf, 0, headerBuf.length, 0);
+          const bytesRead = fs.readSync(fd, headerBuf, 0, headerBuf.length, 0);
 
           if (bytesRead > 10 && headerBuf[0] === 0x49 && headerBuf[1] === 0x44 && headerBuf[2] === 0x33) {
-            const tagSize =
-              ((headerBuf[6] & 0x7f) << 21) |
-              ((headerBuf[7] & 0x7f) << 14) |
-              ((headerBuf[8] & 0x7f) << 7) |
-              (headerBuf[9] & 0x7f);
-            if (tagSize + 10 > headerBuf.length && tagSize < 10 * 1024 * 1024) {
-              headerBuf = Buffer.alloc(tagSize + 10);
-              bytesRead = fs.readSync(fd, headerBuf, 0, tagSize + 10, 0);
-            }
-            fs.closeSync(fd);
-            fd = null;
-
-            // Read ID3 tags
             const id3Title = extractId3Text(headerBuf, 'TIT2');
             const id3Artist = extractId3Text(headerBuf, 'TPE1');
             if (id3Title) title = id3Title;
             if (id3Artist) artist = id3Artist;
 
-            // Check cover
             if (headerBuf.indexOf('APIC') !== -1) {
               hasCover = true;
             }
@@ -558,6 +564,7 @@ function createWindow() {
     fullscreenable: true,
     title: 'MAGNItola',
     icon: iconPath,
+    show: false,
     autoHideMenuBar: true,
     backgroundColor: '#4c5844',
     webPreferences: {
@@ -607,6 +614,11 @@ function createWindow() {
       }
     });
   }
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    setTimeout(cleanStaleTempDirs, 1000);
+  });
 
   mainWindow.loadFile('index.html');
 

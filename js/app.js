@@ -56,29 +56,6 @@ function stopQuoteRotation() {
   }
 }
 
-function showUpdateBanner(updateInfo) {
-  const banner = document.getElementById('updateBanner');
-  const bannerText = document.getElementById('updateBannerText');
-  const btnUpdateDownload = document.getElementById('btnUpdateDownload');
-  const btnUpdateDismiss = document.getElementById('btnUpdateDismiss');
-  if (!banner || !bannerText) return;
-
-  bannerText.textContent = `${window.L?.updateBanner || '✦ New version available: '} ${updateInfo.latestVersion}`;
-  banner.style.display = 'flex';
-
-  if (btnUpdateDownload) {
-    btnUpdateDownload.onclick = () => {
-      window.open(updateInfo.releaseUrl, '_blank');
-    };
-  }
-
-  if (btnUpdateDismiss) {
-    btnUpdateDismiss.onclick = () => {
-      banner.style.display = 'none';
-    };
-  }
-}
-
 window.updateSavePathDisplay = updateSavePathDisplay;
 window.checkQuoteVisibility = checkQuoteVisibility;
 window.startQuoteRotation = startQuoteRotation;
@@ -95,22 +72,29 @@ window.addEventListener('DOMContentLoaded', async () => {
     window.setLanguage(savedLang);
   }
 
-  // Initialize download folder
+  // Initialize download folder and scan library asynchronously
   let downloadFolder = localStorage.getItem('magnitola_save_folder') || '';
   if (!downloadFolder && api?.getDefaultDownloadsFolder) {
-    try {
-      const defPath = await api.getDefaultDownloadsFolder();
-      if (defPath && !downloadFolder) {
-        downloadFolder = defPath;
-        updateSavePathDisplay();
-        if (typeof window.scanAndLoadLibrary === 'function') {
-          window.scanAndLoadLibrary(downloadFolder);
+    api
+      .getDefaultDownloadsFolder()
+      .then((defPath) => {
+        if (defPath && !localStorage.getItem('magnitola_save_folder')) {
+          updateSavePathDisplay();
+          setTimeout(() => {
+            if (typeof window.scanAndLoadLibrary === 'function') {
+              window.scanAndLoadLibrary(defPath);
+            }
+          }, 50);
         }
-      }
-    } catch {}
-  } else if (downloadFolder && typeof window.scanAndLoadLibrary === 'function') {
+      })
+      .catch(() => {});
+  } else if (downloadFolder) {
     updateSavePathDisplay();
-    window.scanAndLoadLibrary(downloadFolder);
+    setTimeout(() => {
+      if (typeof window.scanAndLoadLibrary === 'function') {
+        window.scanAndLoadLibrary(downloadFolder);
+      }
+    }, 50);
   }
 
   checkQuoteVisibility();
@@ -194,23 +178,5 @@ window.addEventListener('DOMContentLoaded', async () => {
       window.cancelRequested = true;
       btnStopDownload.disabled = true;
     });
-  }
-
-  // Check for updates
-  if (api?.onUpdateAvailable) {
-    api.onUpdateAvailable((info) => {
-      if (info && info.hasUpdate) {
-        showUpdateBanner(info);
-      }
-    });
-  }
-
-  if (api?.checkForUpdates) {
-    try {
-      const updateInfo = await api.checkForUpdates();
-      if (updateInfo && updateInfo.hasUpdate) {
-        showUpdateBanner(updateInfo);
-      }
-    } catch {}
   }
 });

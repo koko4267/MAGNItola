@@ -1,6 +1,6 @@
 {
   "name": "magnitola",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "Music & Metadata Downloader and Player with ID3v2.3 tagging",
   "main": "main.js",
   "author": "MAGNItola",
@@ -11,8 +11,9 @@
   },
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --win zip --x64 --publish never",
-    "build:exe": "electron-builder --win portable --x64 --publish never",
+    "build": "electron-builder --win nsis zip --x64 --publish never",
+    "build:installer": "electron-builder --win nsis --x64 --publish never",
+    "build:zip": "electron-builder --win zip --x64 --publish never",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{js,html,css,json}\""
@@ -43,6 +44,12 @@
     "win": {
       "target": [
         {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
           "target": "zip",
           "arch": [
             "x64"
@@ -50,7 +57,16 @@
         }
       ],
       "icon": "icon.ico",
-      "artifactName": "MAGNItola-Windows.${ext}"
+      "artifactName": "MAGNItola-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MAGNItola",
+      "artifactName": "MAGNItola-Setup-${version}.${ext}",
+      "uninstallDisplayName": "MAGNItola"
     },
     "files": [
       "index.html",

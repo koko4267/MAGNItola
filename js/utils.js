@@ -26,7 +26,7 @@ function getCoverArtUrl(url) {
 function bufferToDataUrl(buf, mimeType = 'image/jpeg') {
   let binary = '';
   const len = buf.byteLength;
-  const chunkSize = 0x8000;
+  const chunkSize = 0x4000;
   for (let i = 0; i < len; i += chunkSize) {
     const sub = buf.subarray(i, Math.min(i + chunkSize, len));
     binary += String.fromCharCode.apply(null, sub);

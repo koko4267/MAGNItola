@@ -11,6 +11,27 @@ let isPointerDownOnSeek = false;
 
 const artworkCache = new Map();
 
+function setArtworkCache(key, value) {
+  const max = window.APP_CONFIG?.ARTWORK_CACHE_MAX || 200;
+  if (artworkCache.has(key)) {
+    artworkCache.delete(key);
+  } else if (artworkCache.size >= max) {
+    const oldestKey = artworkCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      artworkCache.delete(oldestKey);
+    }
+  }
+  artworkCache.set(key, value);
+}
+
+function getArtworkCache(key) {
+  if (!artworkCache.has(key)) return null;
+  const val = artworkCache.get(key);
+  artworkCache.delete(key);
+  artworkCache.set(key, val);
+  return val;
+}
+
 function getMediaUrl(filePath) {
   return `media://local/${encodeURIComponent(filePath)}`;
 }
@@ -34,7 +55,7 @@ function addTrackToPlayer(track) {
     libraryTracks.unshift(track);
   }
   if (track.artworkDataUrl) {
-    artworkCache.set(track.filePath, track.artworkDataUrl);
+    setArtworkCache(track.filePath, track.artworkDataUrl);
   }
   renderTrackList();
   updatePlayerButtonsState();
@@ -51,6 +72,22 @@ async function scanAndLoadLibrary(folder) {
   } catch (err) {
     console.error('Scan library error:', err);
   }
+}
+
+function updateActiveTrackHighlight() {
+  const container = document.getElementById('playerTrackList');
+  if (!container) return;
+  const rows = container.querySelectorAll('.track-item-row');
+  const activePath = currentPlayingTrack?.filePath;
+  rows.forEach((row) => {
+    const idx = parseInt(row.getAttribute('data-index'), 10);
+    const track = libraryTracks[idx];
+    if (track && activePath && track.filePath === activePath) {
+      row.classList.add('active');
+    } else {
+      row.classList.remove('active');
+    }
+  });
 }
 
 // Track row element
@@ -80,7 +117,7 @@ function createTrackItemElement(tr, index, topPx) {
   artBox.appendChild(icon);
 
   // Lazy load cover
-  const cached = tr.artworkDataUrl || artworkCache.get(tr.filePath);
+  const cached = tr.artworkDataUrl || getArtworkCache(tr.filePath);
   if (cached) {
     img.src = cached;
     img.style.display = 'block';
@@ -92,7 +129,7 @@ function createTrackItemElement(tr, index, topPx) {
         .readTrackCover(tr.filePath)
         .then((coverDataUrl) => {
           if (coverDataUrl) {
-            artworkCache.set(tr.filePath, coverDataUrl);
+            setArtworkCache(tr.filePath, coverDataUrl);
             img.src = coverDataUrl;
             img.style.display = 'block';
             icon.style.display = 'none';
@@ -107,11 +144,11 @@ function createTrackItemElement(tr, index, topPx) {
 
   const titleEl = document.createElement('div');
   titleEl.className = 'track-item-title';
-  titleEl.textContent = tr.title || 'Untitled';
+  titleEl.textContent = tr.title || window.L?.untitled || 'Untitled';
 
   const artistEl = document.createElement('div');
   artistEl.className = 'track-item-artist';
-  artistEl.textContent = tr.artist || 'Unknown';
+  artistEl.textContent = tr.artist || window.L?.unknownArtist || 'Unknown';
 
   metaBox.appendChild(titleEl);
   metaBox.appendChild(artistEl);
@@ -193,7 +230,7 @@ function playTrack(track) {
   if (playerLargeArtTitle) playerLargeArtTitle.textContent = track.title;
   if (playerLargeArtArtist) playerLargeArtArtist.textContent = track.artist;
 
-  const coverUrl = track.artworkDataUrl || artworkCache.get(track.filePath);
+  const coverUrl = track.artworkDataUrl || getArtworkCache(track.filePath);
   if (coverUrl) {
     if (playerLargeArtImg) {
       playerLargeArtImg.src = coverUrl;
@@ -208,7 +245,7 @@ function playTrack(track) {
       .readTrackCover(track.filePath)
       .then((dataUrl) => {
         if (dataUrl) {
-          artworkCache.set(track.filePath, dataUrl);
+          setArtworkCache(track.filePath, dataUrl);
           if (currentPlayingTrack && currentPlayingTrack.filePath === track.filePath) {
             if (playerLargeArtImg) {
               playerLargeArtImg.src = dataUrl;
@@ -230,7 +267,7 @@ function playTrack(track) {
 
   if (btnPlayerPlay) {
     btnPlayerPlay.textContent = '❚❚';
-    btnPlayerPlay.title = window.L?.paused || 'Paused';
+    btnPlayerPlay.title = window.L?.playing || 'Playing';
   }
   if (playerSeekInput) {
     playerSeekInput.disabled = false;
@@ -260,17 +297,17 @@ function togglePlay() {
     isPlaying = false;
     if (btnPlayerPlay) {
       btnPlayerPlay.textContent = '▶';
-      btnPlayerPlay.title = window.L?.playing || 'Playing';
+      btnPlayerPlay.title = window.L?.paused || 'Paused';
     }
   } else {
     audio.play().catch((e) => console.warn(e));
     isPlaying = true;
     if (btnPlayerPlay) {
       btnPlayerPlay.textContent = '❚❚';
-      btnPlayerPlay.title = window.L?.paused || 'Paused';
+      btnPlayerPlay.title = window.L?.playing || 'Playing';
     }
   }
-  renderTrackList();
+  updateActiveTrackHighlight();
 }
 
 function prevTrack() {
@@ -363,21 +400,36 @@ function initPlayerListeners() {
   if (btnPlayerNext) btnPlayerNext.addEventListener('click', nextTrack);
 
   if (playerTrackList) {
-    playerTrackList.addEventListener('scroll', () => {
-      renderTrackList();
-    });
+    let scrollRafId = null;
+    playerTrackList.addEventListener(
+      'scroll',
+      () => {
+        if (scrollRafId) return;
+        scrollRafId = requestAnimationFrame(() => {
+          renderTrackList();
+          scrollRafId = null;
+        });
+      },
+      { passive: true }
+    );
   }
 
   audio.addEventListener('play', () => {
     isPlaying = true;
-    if (btnPlayerPlay) btnPlayerPlay.textContent = '❚❚';
-    renderTrackList();
+    if (btnPlayerPlay) {
+      btnPlayerPlay.textContent = '❚❚';
+      btnPlayerPlay.title = window.L?.playing || 'Playing';
+    }
+    updateActiveTrackHighlight();
   });
 
   audio.addEventListener('pause', () => {
     isPlaying = false;
-    if (btnPlayerPlay) btnPlayerPlay.textContent = '▶';
-    renderTrackList();
+    if (btnPlayerPlay) {
+      btnPlayerPlay.textContent = '▶';
+      btnPlayerPlay.title = window.L?.paused || 'Paused';
+    }
+    updateActiveTrackHighlight();
   });
 
   audio.addEventListener('ended', () => {

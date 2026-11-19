@@ -29,6 +29,13 @@ window.LOCALES = {
     noTracksInFolder: 'No MP3 files found in folder.',
     playing: 'Playing',
     paused: 'Paused',
+    noArtwork: 'NO ARTWORK',
+    untitled: 'Untitled',
+    unknownArtist: 'Unknown Artist',
+    defaultArtist: 'MAGNItola',
+    encodingMp3Badge: 'MP3 192k',
+    skipStatus: 'SKIP',
+    naSize: '-- / -- MB',
     queueTitle: 'Download queue',
     queueStatusWait: 'WAIT',
     queueStatusDown: 'DOWN',
@@ -72,6 +79,13 @@ window.LOCALES = {
     noTracksInFolder: 'В папке не найдены MP3 треки.',
     playing: 'Играет',
     paused: 'Пауза',
+    noArtwork: 'НЕТ ОБЛОЖКИ',
+    untitled: 'Без названия',
+    unknownArtist: 'Неизвестный исполнитель',
+    defaultArtist: 'MAGNItola',
+    encodingMp3Badge: 'MP3 192k',
+    skipStatus: 'ПРОПУСК',
+    naSize: '-- / -- МБ',
     queueTitle: 'Очередь загрузки',
     queueStatusWait: 'ЖДЕТ',
     queueStatusDown: 'ЗАГР',
@@ -114,6 +128,7 @@ function setLanguage(lang) {
   const currentTrackTitle = document.getElementById('currentTrackTitle');
   const quoteDisplay = document.getElementById('quoteDisplay');
   const queueHeaderTitle = document.getElementById('queueHeaderTitle');
+  const playerLargeArtPlaceholderLabel = document.getElementById('playerLargeArtPlaceholderLabel');
 
   if (langLabel) langLabel.textContent = lang.toUpperCase();
   if (flagImg) flagImg.src = lang === 'ru' ? 'ru.png' : 'us.png';
@@ -125,6 +140,7 @@ function setLanguage(lang) {
   if (btnStopDownload) btnStopDownload.textContent = L.stopDownload;
   if (btnBrowseFolder) btnBrowseFolder.textContent = L.browse;
   if (queueHeaderTitle) queueHeaderTitle.textContent = L.queueTitle;
+  if (playerLargeArtPlaceholderLabel) playerLargeArtPlaceholderLabel.textContent = L.noArtwork;
 
   if (typeof window.renderDownloadQueue === 'function') {
     window.renderDownloadQueue();

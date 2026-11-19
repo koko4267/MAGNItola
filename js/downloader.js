@@ -82,6 +82,19 @@ function encodeAudioBufferWithWorker(audioBuffer, bitrate = 192, onProgress = nu
 }
 
 // Render download queue
+function getQueueStatusInfo(status) {
+  const L = window.L || {};
+  const statusMap = {
+    wait: { text: L.queueStatusWait || 'WAIT', title: '' },
+    down: { text: L.queueStatusDown || 'DOWN', title: '' },
+    done: { text: L.queueStatusDone || 'DONE', title: '' },
+    skip: { text: L.queueStatusSkip || 'SKIP', title: L.alreadyExists || 'Already exists' },
+    fail: { text: L.queueStatusFail || 'FAIL', title: L.failed || 'Download failed' },
+    drm: { text: L.queueStatusDrm || 'DRM', title: L.drmProtected || 'Protected by DRM (SoundCloud Go+)' }
+  };
+  return statusMap[status] || statusMap.wait;
+}
+
 function renderDownloadQueue() {
   const queueBox = document.getElementById('downloadQueueBox');
   const queueList = document.getElementById('queueListContainer');
@@ -114,28 +127,19 @@ function renderDownloadQueue() {
 
     const statusBadge = document.createElement('span');
     statusBadge.className = `queue-item-status queue-status-${status}`;
-    let statusText = window.L?.queueStatusWait || 'WAIT';
-    if (status === 'down') statusText = window.L?.queueStatusDown || 'DOWN';
-    if (status === 'done') statusText = window.L?.queueStatusDone || 'DONE';
-    if (status === 'skip') statusText = window.L?.queueStatusSkip || 'SKIP';
-    if (status === 'fail') statusText = window.L?.queueStatusFail || 'FAIL';
-    if (status === 'drm') statusText = window.L?.queueStatusDrm || 'DRM';
-    statusBadge.textContent = statusText;
-    if (status === 'drm') {
-      statusBadge.title = window.L?.drmProtected || 'Protected by DRM (SoundCloud Go+)';
-    } else if (status === 'fail') {
-      statusBadge.title = window.L?.failed || 'Download failed';
-    } else if (status === 'skip') {
-      statusBadge.title = window.L?.alreadyExists || 'Already exists';
+    const statusInfo = getQueueStatusInfo(status);
+    statusBadge.textContent = statusInfo.text;
+    if (statusInfo.title) {
+      statusBadge.title = statusInfo.title;
     }
 
     const titleEl = document.createElement('span');
     titleEl.className = 'queue-item-title';
-    titleEl.textContent = item.title || 'Untitled';
+    titleEl.textContent = item.title || window.L?.untitled || 'Untitled';
 
     const artistEl = document.createElement('span');
     artistEl.className = 'queue-item-artist';
-    artistEl.textContent = item.user?.username || 'MAGNItola';
+    artistEl.textContent = item.user?.username || window.L?.defaultArtist || 'MAGNItola';
 
     row.appendChild(statusBadge);
     row.appendChild(titleEl);
@@ -160,22 +164,9 @@ function updateQueueItemStatus(index, status) {
     const badge = row.querySelector('.queue-item-status');
     if (badge) {
       badge.className = `queue-item-status queue-status-${status}`;
-      let statusText = window.L?.queueStatusWait || 'WAIT';
-      if (status === 'down') statusText = window.L?.queueStatusDown || 'DOWN';
-      if (status === 'done') statusText = window.L?.queueStatusDone || 'DONE';
-      if (status === 'skip') statusText = window.L?.queueStatusSkip || 'SKIP';
-      if (status === 'fail') statusText = window.L?.queueStatusFail || 'FAIL';
-      if (status === 'drm') statusText = window.L?.queueStatusDrm || 'DRM';
-      badge.textContent = statusText;
-      if (status === 'drm') {
-        badge.title = window.L?.drmProtected || 'Protected by DRM (SoundCloud Go+)';
-      } else if (status === 'fail') {
-        badge.title = window.L?.failed || 'Download failed';
-      } else if (status === 'skip') {
-        badge.title = window.L?.alreadyExists || 'Already exists';
-      } else {
-        badge.title = '';
-      }
+      const statusInfo = getQueueStatusInfo(status);
+      badge.textContent = statusInfo.text;
+      badge.title = statusInfo.title || '';
     }
     if (status === 'down') {
       row.scrollIntoView({ block: 'nearest' });
@@ -340,8 +331,10 @@ async function downloadTrack(track, index, total, subFolder = null, setMeta = {}
   const api = window.electronAPI || null;
   let clientId = await getActiveClientId();
 
-  const title = track.title || 'Untitled';
-  const artist = track.user ? track.user.username || 'Unknown Artist' : 'MAGNItola';
+  const title = track.title || window.L?.untitled || 'Untitled';
+  const artist = track.user
+    ? track.user.username || window.L?.unknownArtist || 'Unknown Artist'
+    : window.L?.defaultArtist || 'MAGNItola';
   const artwork = track.artwork_url || (track.user ? track.user.avatar_url : null);
   const fileName = `${window.sanitizeFileName(artist)} - ${window.sanitizeFileName(title)}.mp3`;
 
@@ -378,8 +371,8 @@ async function downloadTrack(track, index, total, subFolder = null, setMeta = {}
         lblCurrentStatus.textContent = `${window.L.currentStatus || 'Current download:'} ${window.L.alreadyExists || 'Already exists'}`;
       }
       setDownloadProgress(100);
-      if (downloadSpeedStats) downloadSpeedStats.textContent = 'SKIP';
-      if (downloadSizeStats) downloadSizeStats.textContent = '-- / -- MB';
+      if (downloadSpeedStats) downloadSpeedStats.textContent = window.L?.skipStatus || 'SKIP';
+      if (downloadSizeStats) downloadSizeStats.textContent = window.L?.naSize || '-- / -- MB';
       updateQueueItemStatus(index - 1, 'skip');
       await new Promise((r) => setTimeout(r, 120));
       return true;
@@ -403,8 +396,8 @@ async function downloadTrack(track, index, total, subFolder = null, setMeta = {}
         lblCurrentStatus.textContent = `${window.L.currentStatus || 'Current download:'} ${window.L.drmProtected || 'Protected by DRM (SoundCloud Go+)'}`;
       }
       setDownloadProgress(0);
-      if (downloadSpeedStats) downloadSpeedStats.textContent = 'DRM';
-      if (downloadSizeStats) downloadSizeStats.textContent = '-- / -- MB';
+      if (downloadSpeedStats) downloadSpeedStats.textContent = window.L?.queueStatusDrm || 'DRM';
+      if (downloadSizeStats) downloadSizeStats.textContent = window.L?.naSize || '-- / -- MB';
       updateQueueItemStatus(index - 1, 'drm');
       await new Promise((r) => setTimeout(r, 120));
       return false;
@@ -658,7 +651,7 @@ async function downloadTrack(track, index, total, subFolder = null, setMeta = {}
         lblCurrentStatus.textContent = `${window.L.currentStatus || 'Current download:'} ${window.L.encoding || 'Encoding MP3...'}`;
       }
       setDownloadProgress(70);
-      if (downloadSpeedStats) downloadSpeedStats.textContent = 'MP3 192k';
+      if (downloadSpeedStats) downloadSpeedStats.textContent = window.L?.encodingMp3Badge || 'MP3 192k';
 
       const actx = new (window.AudioContext || window.webkitAudioContext)();
       try {
@@ -667,6 +660,11 @@ async function downloadTrack(track, index, total, subFolder = null, setMeta = {}
           audioBuffer.byteOffset + audioBuffer.byteLength
         );
         const decodedPcm = await actx.decodeAudioData(abCopy);
+
+        if (window.cancelRequested) {
+          updateQueueItemStatus(index - 1, 'wait');
+          return false;
+        }
 
         // Encode via Web Worker
         cleanMp3Audio = await encodeAudioBufferWithWorker(

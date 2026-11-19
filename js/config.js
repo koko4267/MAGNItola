@@ -9,5 +9,8 @@ window.APP_CONFIG = {
   QUOTE_ROTATION_INTERVAL_MS: 2000,
   TRACK_ROW_HEIGHT_PX: 58,
   VIRTUAL_OVERSCAN_COUNT: 4,
-  SUPPORTED_AUDIO_EXTENSIONS: ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.opus']
+  SUPPORTED_AUDIO_EXTENSIONS: ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.opus'],
+  ARTWORK_CACHE_MAX: 200,
+  MAX_SCAN_DEPTH: 4,
+  MAX_SC_SCRIPTS_CHECK: 5
 };

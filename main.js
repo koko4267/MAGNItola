@@ -278,7 +278,11 @@ function extractId3Text(headerBuf, frameId) {
     } else if (encoding === 0x00) {
       return Buffer.from(frameData.subarray(1)).toString('latin1').replace(/\0+$/, '').trim();
     } else if (encoding === 0x03) {
-      return Buffer.from(frameData.subarray(1)).toString('utf8').replace(/\0+$/, '').trim();
+      let textBuf = frameData.subarray(1);
+      if (textBuf.length >= 3 && textBuf[0] === 0xef && textBuf[1] === 0xbb && textBuf[2] === 0xbf) {
+        textBuf = textBuf.subarray(3);
+      }
+      return Buffer.from(textBuf).toString('utf8').replace(/\0+$/, '').trim();
     }
   } catch {}
   return null;
@@ -344,8 +348,9 @@ async function findSoundCloudClientId() {
     const html = await resp.text();
     const scriptRegex = /https:\/\/[^"'\s]+sndcdn\.com\/[^"'\s]+\.js/g;
     const scripts = Array.from(new Set(html.match(scriptRegex) || []));
+    const reversed = scripts.reverse().slice(0, 5);
 
-    for (const scriptUrl of scripts.reverse()) {
+    for (const scriptUrl of reversed) {
       try {
         const sResp = await net.fetch(scriptUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
@@ -362,6 +367,35 @@ async function findSoundCloudClientId() {
     console.warn('[findSoundCloudClientId]', err);
   }
   return null;
+}
+
+async function collectMediaFiles(dir, supported, currentDepth = 0, maxDepth = 4) {
+  if (currentDepth > maxDepth) return [];
+  const results = [];
+  try {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase();
+        if (supported.has(ext)) {
+          results.push(path.join(dir, entry.name));
+        }
+      } else if (entry.isDirectory()) {
+        const dirName = entry.name.toLowerCase();
+        if (
+          dirName.startsWith('.') ||
+          dirName === 'node_modules' ||
+          dirName === 'appdata' ||
+          dirName === '$recycle.bin'
+        ) {
+          continue;
+        }
+        const subFiles = await collectMediaFiles(path.join(dir, entry.name), supported, currentDepth + 1, maxDepth);
+        results.push(...subFiles);
+      }
+    }
+  } catch {}
+  return results;
 }
 
 function registerIpcHandlers() {
@@ -451,35 +485,7 @@ function registerIpcHandlers() {
       if (!stat.isDirectory()) return [];
 
       const supported = new Set(['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.opus']);
-      const entries = await fs.promises.readdir(resolvedFolder, { withFileTypes: true });
-      const mediaFiles = [];
-
-      for (const entry of entries) {
-        if (entry.isFile()) {
-          const ext = path.extname(entry.name).toLowerCase();
-          if (supported.has(ext)) {
-            mediaFiles.push(path.join(resolvedFolder, entry.name));
-          }
-        } else if (entry.isDirectory()) {
-          const dirName = entry.name.toLowerCase();
-          if (dirName.startsWith('.') || dirName === 'node_modules' || dirName === 'appdata') {
-            continue;
-          }
-          try {
-            const subEntries = await fs.promises.readdir(path.join(resolvedFolder, entry.name), {
-              withFileTypes: true
-            });
-            for (const sub of subEntries) {
-              if (sub.isFile()) {
-                const ext = path.extname(sub.name).toLowerCase();
-                if (supported.has(ext)) {
-                  mediaFiles.push(path.join(resolvedFolder, entry.name, sub.name));
-                }
-              }
-            }
-          } catch {}
-        }
-      }
+      const mediaFiles = await collectMediaFiles(resolvedFolder, supported, 0, 4);
 
       const list = [];
       const headerBuf = Buffer.alloc(8192);

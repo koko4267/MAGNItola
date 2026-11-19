@@ -34,7 +34,7 @@
         </div>
 
         <!-- Current Download & Queue Box -->
-        <div class="groupbox" style="flex: 1; display: flex; flex-direction: column">
+        <div class="groupbox" style="flex: 1; display: flex; flex-direction: column; min-height: 0">
           <div class="groupbox-title" id="lblCurrentStatus">Current download:</div>
 
           <div class="download-card">
@@ -63,16 +63,7 @@
             </div>
           </div>
 
-          <!-- Download queue -->
-          <div class="queue-box" id="downloadQueueBox" style="display: none">
-            <div class="queue-header-row">
-              <span id="queueHeaderTitle">Download queue</span>
-              <span id="queueHeaderCount">0/0</span>
-            </div>
-            <div class="queue-list-container" id="queueListContainer"></div>
-          </div>
-
-          <!-- Bottom Controls Row -->
+          <!-- Controls Row (Always under download card) -->
           <div class="bottom-controls-row">
             <a
               href="https://sync-line.pages.dev/"
@@ -103,6 +94,15 @@
                 <span id="langLabel">EN</span>
               </button>
             </div>
+          </div>
+
+          <!-- Download queue -->
+          <div class="queue-box" id="downloadQueueBox" style="display: none">
+            <div class="queue-header-row">
+              <span id="queueHeaderTitle">Download queue</span>
+              <span id="queueHeaderCount">0/0</span>
+            </div>
+            <div class="queue-list-container" id="queueListContainer"></div>
           </div>
         </div>
       </div>

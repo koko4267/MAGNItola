@@ -379,7 +379,7 @@ body {
   background-color: var(--bg-panel);
   display: flex;
   flex-direction: column;
-  max-height: 160px;
+  flex: 1;
   min-height: 70px;
 }
 

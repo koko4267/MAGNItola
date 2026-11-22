@@ -29,8 +29,8 @@
   ],
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
+    "electron": "45.4.1",
+    "electron-builder": "^26.18.1",
     "eslint": "^10.15.0",
     "globals": "^17.14.0",
     "prettier": "^3.10.1"
@@ -62,6 +62,8 @@
     },
     "nsis": {
       "oneClick": false,
+      "installerSidebar": "installer/wizard-sidebar.bmp",
+      "uninstallerSidebar": "installer/wizard-sidebar.bmp",
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
@@ -73,6 +75,7 @@
       "index.html",
       "main.js",
       "library.cjs",
+      "track-files.cjs",
       "preload.js",
       "lame.min.js",
       "css/**/*",

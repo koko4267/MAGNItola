@@ -3,6 +3,7 @@
 function sanitizeFileName(name) {
   return (name || 'Track')
     .replace(/[<>:"/\\|?*]+/g, '_')
+    .replace(/[\x00-\x1f]/g, '')
     .trim()
     .replace(/\.+$/, '');
 }

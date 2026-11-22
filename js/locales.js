@@ -9,6 +9,9 @@ window.LOCALES = {
     errors: 'Errors',
     saveFailed: 'Could not save file',
     noStream: 'No playable stream',
+    likesPageFailed: 'Could not load all SoundCloud likes. Try again.',
+    playlistPageFailed: 'Could not load all SoundCloud playlist tracks. Try again.',
+    trackIdentityMissing: 'This track has no SoundCloud ID or permalink.',
     previous: 'Previous track',
     playPause: 'Play or pause',
     next: 'Next track',
@@ -24,7 +27,6 @@ window.LOCALES = {
     startDownload: 'Download',
     stopDownload: 'Stop',
     waitingInput: 'pls faster',
-    ready: 'Ready to download',
     resolvingUrl: 'Resolving link...',
     downloading: 'Downloading track...',
     encoding: 'Encoding MP3...',
@@ -70,6 +72,9 @@ window.LOCALES = {
     errors: 'Ошибок',
     saveFailed: 'Не удалось сохранить файл',
     noStream: 'Нет доступного аудиопотока',
+    likesPageFailed: 'Не удалось получить все лайки SoundCloud. Попробуйте ещё раз.',
+    playlistPageFailed: 'Не удалось получить все треки плейлиста SoundCloud. Попробуйте ещё раз.',
+    trackIdentityMissing: 'У трека нет ID или постоянной ссылки SoundCloud.',
     previous: 'Предыдущий трек',
     playPause: 'Воспроизведение или пауза',
     next: 'Следующий трек',
@@ -85,7 +90,6 @@ window.LOCALES = {
     startDownload: 'Скачать',
     stopDownload: 'Стоп',
     waitingInput: 'пж быстрее',
-    ready: 'Готов к загрузке',
     resolvingUrl: 'Определение ссылки...',
     downloading: 'Скачивание трека...',
     encoding: 'Кодирование MP3...',
@@ -155,6 +159,7 @@ function setLanguage(lang) {
     control.setAttribute('aria-label', label);
   }
   document.getElementById('saveFolderLabel').textContent = L.saveLocation;
+  window.updatePlaybackButton?.();
 
   const langLabel = document.getElementById('langLabel');
   const flagImg = document.getElementById('flagImg');

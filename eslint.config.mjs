@@ -11,7 +11,7 @@ export default [
     ]
   },
   {
-    files: ['main.js', 'preload.js', 'library.cjs', 'test/**/*.cjs'],
+    files: ['main.js', 'preload.js', '*.cjs', 'test/**/*.cjs'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'commonjs',

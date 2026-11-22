@@ -5,7 +5,6 @@ audio.volume = 1.0;
 
 let libraryTracks = [];
 let currentPlayingTrack = null;
-let isPlaying = false;
 let isDraggingSeek = false;
 let isPointerDownOnSeek = false;
 
@@ -68,16 +67,18 @@ function updatePlayerButtonsState() {
 
 function addTrackToPlayer(track, folder) {
   if (folder && selectedFolder && folder.toLowerCase() !== selectedFolder) return;
-  pendingScan?.added.set(track.filePath.toLowerCase(), track);
-  const existingIdx = libraryTracks.findIndex((t) => t.filePath.toLowerCase() === track.filePath.toLowerCase());
+  const { artworkDataUrl, ...metadata } = track;
+  const fileKey = metadata.filePath.toLowerCase();
+  pendingScan?.added.set(fileKey, metadata);
+  const existingIdx = libraryTracks.findIndex((t) => t.filePath.toLowerCase() === fileKey);
   if (existingIdx !== -1) {
-    libraryTracks[existingIdx] = track;
+    libraryTracks[existingIdx] = metadata;
   } else {
     if (libraryTracks.length) selectedIndex++;
-    libraryTracks.unshift(track);
+    libraryTracks.unshift(metadata);
   }
-  if (track.artworkDataUrl) {
-    setArtworkCache(track.filePath, track.artworkDataUrl);
+  if (artworkDataUrl) {
+    setArtworkCache(metadata.filePath, artworkDataUrl);
   }
   renderTrackList();
   updatePlayerButtonsState();
@@ -115,28 +116,25 @@ async function scanAndLoadLibrary(folder) {
   }
 }
 
-function updateActiveTrackHighlight() {
-  const container = document.getElementById('playerTrackList');
-  if (!container) return;
-  const rows = container.querySelectorAll('.track-item-row');
-  const activePath = currentPlayingTrack?.filePath;
-  rows.forEach((row) => {
-    const idx = parseInt(row.getAttribute('data-index'), 10);
-    const track = libraryTracks[idx];
-    if (track && activePath && track.filePath === activePath) {
-      row.classList.add('active');
-    } else {
-      row.classList.remove('active');
-    }
+function updatePlaybackButton() {
+  const button = document.getElementById('btnPlayerPlay');
+  if (!button) return;
+  const playing = !audio.paused && !audio.ended && !audio.error;
+  button.textContent = playing ? '❚❚' : '▶';
+  if (currentPlayingTrack) button.title = playing ? window.L.playing : window.L.paused;
+}
+
+function startPlayback() {
+  audio.play().catch((error) => {
+    updatePlaybackButton();
+    console.warn('Playback start warning:', error);
   });
 }
 
 // Track row element
 function createTrackItemElement(tr, index, topPx) {
-  const isActive = currentPlayingTrack && currentPlayingTrack.filePath === tr.filePath;
-
   const row = document.createElement('div');
-  row.className = `track-item-row ${isActive ? 'active' : ''}`;
+  row.className = 'track-item-row';
   row.id = 'library-track-' + index;
   row.setAttribute('role', 'option');
   row.style.top = `${topPx}px`;
@@ -158,7 +156,7 @@ function createTrackItemElement(tr, index, topPx) {
   artBox.appendChild(icon);
 
   // Lazy load cover
-  const cached = tr.artworkDataUrl || getArtworkCache(tr.filePath);
+  const cached = getArtworkCache(tr.filePath);
   if (cached) {
     img.src = cached;
     img.style.display = 'block';
@@ -279,7 +277,6 @@ function playTrack(track) {
   const playerLargeArtArtist = document.getElementById('playerLargeArtArtist');
   const playerLargeArtImg = document.getElementById('playerLargeArtImg');
   const playerLargeArtPlaceholder = document.getElementById('playerLargeArtPlaceholder');
-  const btnPlayerPlay = document.getElementById('btnPlayerPlay');
   const playerSeekInput = document.getElementById('playerSeekInput');
   const playerSeekFill = document.getElementById('playerSeekFill');
   const playerCurrentTime = document.getElementById('playerCurrentTime');
@@ -289,7 +286,7 @@ function playTrack(track) {
   if (playerLargeArtTitle) playerLargeArtTitle.textContent = track.title;
   if (playerLargeArtArtist) playerLargeArtArtist.textContent = track.artist;
 
-  const coverUrl = track.artworkDataUrl || getArtworkCache(track.filePath);
+  const coverUrl = getArtworkCache(track.filePath);
   if (coverUrl) {
     if (playerLargeArtImg) {
       playerLargeArtImg.src = coverUrl;
@@ -319,13 +316,7 @@ function playTrack(track) {
   }
 
   audio.src = getMediaUrl(track.filePath);
-  audio.play().catch((e) => console.warn('Playback start warning:', e));
-  isPlaying = true;
-
-  if (btnPlayerPlay) {
-    btnPlayerPlay.textContent = '❚❚';
-    btnPlayerPlay.title = window.L?.playing || 'Playing';
-  }
+  startPlayback();
   if (playerSeekInput) {
     playerSeekInput.disabled = false;
     if (track.duration && track.duration > 0) {
@@ -342,29 +333,14 @@ function playTrack(track) {
 }
 
 function togglePlay() {
-  const btnPlayerPlay = document.getElementById('btnPlayerPlay');
   if (!currentPlayingTrack && libraryTracks.length > 0) {
     playTrack(libraryTracks[0]);
     return;
   }
   if (!currentPlayingTrack) return;
 
-  if (isPlaying) {
-    audio.pause();
-    isPlaying = false;
-    if (btnPlayerPlay) {
-      btnPlayerPlay.textContent = '▶';
-      btnPlayerPlay.title = window.L?.paused || 'Paused';
-    }
-  } else {
-    audio.play().catch((e) => console.warn(e));
-    isPlaying = true;
-    if (btnPlayerPlay) {
-      btnPlayerPlay.textContent = '❚❚';
-      btnPlayerPlay.title = window.L?.playing || 'Playing';
-    }
-  }
-  updateActiveTrackHighlight();
+  if (audio.paused) startPlayback();
+  else audio.pause();
 }
 
 function prevTrack() {
@@ -487,23 +463,9 @@ function initPlayerListeners() {
     );
   }
 
-  audio.addEventListener('play', () => {
-    isPlaying = true;
-    if (btnPlayerPlay) {
-      btnPlayerPlay.textContent = '❚❚';
-      btnPlayerPlay.title = window.L?.playing || 'Playing';
-    }
-    updateActiveTrackHighlight();
-  });
-
-  audio.addEventListener('pause', () => {
-    isPlaying = false;
-    if (btnPlayerPlay) {
-      btnPlayerPlay.textContent = '▶';
-      btnPlayerPlay.title = window.L?.paused || 'Paused';
-    }
-    updateActiveTrackHighlight();
-  });
+  audio.addEventListener('play', updatePlaybackButton);
+  audio.addEventListener('pause', updatePlaybackButton);
+  audio.addEventListener('error', updatePlaybackButton);
 
   audio.addEventListener('ended', () => {
     nextTrack();
@@ -591,8 +553,5 @@ function initPlayerListeners() {
 window.addTrackToPlayer = addTrackToPlayer;
 window.scanAndLoadLibrary = scanAndLoadLibrary;
 window.renderTrackList = renderTrackList;
-window.playTrack = playTrack;
-window.togglePlay = togglePlay;
-window.prevTrack = prevTrack;
-window.nextTrack = nextTrack;
+window.updatePlaybackButton = updatePlaybackButton;
 window.initPlayerListeners = initPlayerListeners;

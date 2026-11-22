@@ -86,6 +86,10 @@ function createId3v23Tag(title, artist, artworkBuffer, extra = {}) {
     const tyer = makeTextFrame('TYER', String(extra.year));
     if (tyer) frames.push(tyer);
   }
+  if (extra.soundCloudId && /^\d+$/.test(String(extra.soundCloudId))) {
+    const identity = new TextEncoder().encode(`\0SoundCloud Track ID\0${extra.soundCloudId}`);
+    frames.push(packFrame('TXXX', identity));
+  }
   if (extra.genre) {
     const tcon = makeTextFrame('TCON', String(extra.genre));
     if (tcon) frames.push(tcon);

@@ -75,17 +75,17 @@ async function resolveSoundCloudUrl(url, signal) {
     const trackIdsToFetch = new Set();
 
     for (const item of tracksElement) {
-      if (item.media && item.media.transcodings) {
+      if (item.media?.transcodings) {
         byId.set(item.id, item);
       } else if (item.id) {
         trackIdsToFetch.add(item.id);
       }
     }
 
-    const missing = [...trackIdsToFetch];
-    if (missing.length > 0) {
+    const missing = [...trackIdsToFetch].filter((id) => !byId.has(id));
+    try {
       for (let i = 0; i < missing.length; i += 50) {
-        if (signal.aborted) break;
+        signal.throwIfAborted();
         const batch = missing.slice(i, i + 50);
         let batchUrl = `https://api-v2.soundcloud.com/tracks?ids=${batch.join('%2C')}&client_id=${clientId}`;
         let bResp = await request(batchUrl);
@@ -94,11 +94,14 @@ async function resolveSoundCloudUrl(url, signal) {
           batchUrl = `https://api-v2.soundcloud.com/tracks?ids=${batch.join('%2C')}&client_id=${clientId}`;
           bResp = await request(batchUrl);
         }
-        if (bResp.ok) {
-          const bTracks = await bResp.json();
-          for (const track of bTracks) byId.set(track.id, track);
-        }
+        if (!bResp.ok) throw new Error(`HTTP ${bResp.status}`);
+        const bTracks = await bResp.json();
+        if (!Array.isArray(bTracks)) throw new Error('Invalid playlist tracks response');
+        for (const track of bTracks) byId.set(track.id, track);
       }
+    } catch (error) {
+      signal.throwIfAborted();
+      throw new Error('playlistPageFailed', { cause: error });
     }
     trackQueue = tracksElement.map((track) => byId.get(track.id) || track);
   } else if (kind === 'user') {
@@ -107,16 +110,25 @@ async function resolveSoundCloudUrl(url, signal) {
     let likesUrl = `https://api-v2.soundcloud.com/users/${userId}/likes?client_id=${clientId}&limit=50`;
 
     while (likesUrl && !signal.aborted) {
-      let lResp = await request(likesUrl);
-      if (lResp.status === 401) {
-        clientId = await getActiveClientId(true, signal);
-        likesUrl = likesUrl.replace(/client_id=[a-zA-Z0-9]+/, `client_id=${clientId}`);
-        lResp = await request(likesUrl);
+      let lData;
+      try {
+        let lResp = await request(likesUrl);
+        if (lResp.status === 401) {
+          clientId = await getActiveClientId(true, signal);
+          const retryUrl = new URL(likesUrl);
+          retryUrl.searchParams.set('client_id', clientId);
+          likesUrl = retryUrl.href;
+          lResp = await request(likesUrl);
+        }
+        if (!lResp.ok) throw new Error(`HTTP ${lResp.status}`);
+        lData = await lResp.json();
+        if (!Array.isArray(lData?.collection)) throw new Error('Invalid likes response');
+      } catch (error) {
+        signal.throwIfAborted();
+        throw new Error('likesPageFailed', { cause: error });
       }
-      if (!lResp.ok) break;
-      const lData = await lResp.json();
 
-      for (const item of lData.collection || []) {
+      for (const item of lData.collection) {
         if (item.track && item.track.media && item.track.media.transcodings) {
           trackQueue.push(item.track);
         } else if (item.playlist && item.playlist.tracks) {
@@ -139,6 +151,7 @@ async function resolveSoundCloudUrl(url, signal) {
         likesUrl = null;
       }
     }
+    signal.throwIfAborted();
   } else {
     throw new Error(window.L.invalidUrlError);
   }
@@ -146,7 +159,6 @@ async function resolveSoundCloudUrl(url, signal) {
   return {
     tracks: trackQueue,
     subFolder,
-    kind,
     title: data.title || null
   };
 }

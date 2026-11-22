@@ -1,8 +1,8 @@
 const { app, BrowserWindow, shell, ipcMain, dialog, protocol, session, clipboard, net } = require('electron');
 const path = require('path');
 const os = require('os');
-const { randomUUID } = require('node:crypto');
-const { scanLibrary } = require('./library.cjs');
+const { scanLibrary, readTrackCover } = require('./library.cjs');
+const { checkTrackFile, saveTrackFile } = require('./track-files.cjs');
 const fs = require('fs');
 const { Readable } = require('stream');
 
@@ -96,14 +96,6 @@ function resolveTargetDirectory(folder, subFolder) {
     }
   }
   return resolved;
-}
-
-function getSafeFileName(fileName) {
-  if (typeof fileName !== 'string' || !fileName.trim() || fileName.includes('\0')) {
-    return null;
-  }
-  const safe = path.basename(fileName);
-  return !safe || safe === '.' || safe === '..' ? null : safe;
 }
 
 function parseMediaPath(requestUrl) {
@@ -263,57 +255,6 @@ function configureAppSession() {
   );
 }
 
-function extractArtworkFromMp3(fullPath) {
-  let fd = null;
-  try {
-    if (!fs.existsSync(fullPath)) return null;
-    fd = fs.openSync(fullPath, 'r');
-    let headerBuf = Buffer.alloc(128 * 1024);
-    const bytesRead = fs.readSync(fd, headerBuf, 0, headerBuf.length, 0);
-
-    if (bytesRead > 10 && headerBuf[0] === 0x49 && headerBuf[1] === 0x44 && headerBuf[2] === 0x33) {
-      const tagSize =
-        ((headerBuf[6] & 0x7f) << 21) |
-        ((headerBuf[7] & 0x7f) << 14) |
-        ((headerBuf[8] & 0x7f) << 7) |
-        (headerBuf[9] & 0x7f);
-      if (tagSize + 10 > headerBuf.length && tagSize < 10 * 1024 * 1024) {
-        headerBuf = Buffer.alloc(tagSize + 10);
-        fs.readSync(fd, headerBuf, 0, tagSize + 10, 0);
-      }
-      fs.closeSync(fd);
-      fd = null;
-
-      const apicIdx = headerBuf.indexOf('APIC');
-      if (apicIdx !== -1) {
-        const frameSize = headerBuf.readUInt32BE(apicIdx + 4);
-        if (apicIdx + 10 + frameSize <= headerBuf.length) {
-          const frameData = headerBuf.subarray(apicIdx + 10, apicIdx + 10 + frameSize);
-          const jpegStart = frameData.indexOf(Buffer.from([0xff, 0xd8, 0xff]));
-          const pngStart = frameData.indexOf(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-
-          const imgStart = jpegStart !== -1 ? jpegStart : pngStart;
-          const mime = jpegStart !== -1 ? 'image/jpeg' : 'image/png';
-
-          if (imgStart !== -1) {
-            const imgBuf = frameData.subarray(imgStart);
-            return `data:${mime};base64,${imgBuf.toString('base64')}`;
-          }
-        }
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  } finally {
-    if (fd !== null) {
-      try {
-        fs.closeSync(fd);
-      } catch {}
-    }
-  }
-}
-
 async function findSoundCloudClientId(signal) {
   try {
     const resp = await net.fetch('https://soundcloud.com', {
@@ -368,56 +309,26 @@ function registerIpcHandlers() {
     return clipboard.readText();
   });
 
-  ipcMain.handle('ensure-folder', async (event, payload) => {
-    if (!isTrustedSender(event) || !payload || typeof payload !== 'object') {
-      return { success: false, error: 'Unauthorized or invalid payload' };
-    }
-    const resolvedFolder = resolveTargetDirectory(payload.folder, payload.subFolder);
-    try {
-      if (!fs.existsSync(resolvedFolder)) {
-        await fs.promises.mkdir(resolvedFolder, { recursive: true });
-      }
-      return { success: true, folderPath: resolvedFolder };
-    } catch (err) {
-      console.error('[ensure-folder]', err);
-      return { success: false, error: err.message };
-    }
-  });
-
   ipcMain.handle('check-file-exists', async (event, payload) => {
     if (!isTrustedSender(event) || !payload || typeof payload !== 'object') {
       return { exists: false };
     }
-    const safeFileName = getSafeFileName(payload.fileName);
-    if (!safeFileName) return { exists: false };
-
     const resolvedFolder = resolveTargetDirectory(payload.folder, payload.subFolder);
-    const targetPath = path.join(resolvedFolder, safeFileName);
-    return {
-      exists: fs.existsSync(targetPath),
-      filePath: targetPath
-    };
+    try {
+      return await checkTrackFile(resolvedFolder, payload);
+    } catch (err) {
+      return { exists: false, error: err.message };
+    }
   });
 
   ipcMain.handle('save-track', async (event, payload) => {
     if (!isTrustedSender(event) || !payload || typeof payload !== 'object') {
       return { success: false, error: 'Unauthorized or invalid payload' };
     }
-    const safeFileName = getSafeFileName(payload.fileName);
-    if (!safeFileName) return { success: false, error: 'Invalid file name' };
-
     const resolvedFolder = resolveTargetDirectory(payload.folder, payload.subFolder);
-    const targetPath = path.join(resolvedFolder, safeFileName);
-
-    const temporaryPath = path.join(resolvedFolder, randomUUID() + '.part');
     try {
-      await fs.promises.mkdir(resolvedFolder, { recursive: true });
-      const fileData = Buffer.isBuffer(payload.buffer) ? payload.buffer : Buffer.from(payload.buffer);
-      await fs.promises.writeFile(temporaryPath, fileData, { flag: 'wx' });
-      await fs.promises.rename(temporaryPath, targetPath);
-      return { success: true, filePath: targetPath };
+      return await saveTrackFile(resolvedFolder, payload);
     } catch (err) {
-      await fs.promises.rm(temporaryPath, { force: true }).catch(() => {});
       console.error('[save-track]', err);
       return { success: false, error: err.message };
     }
@@ -439,7 +350,7 @@ function registerIpcHandlers() {
   ipcMain.handle('read-track-cover', async (event, filePath) => {
     if (!isTrustedSender(event)) return null;
     if (typeof filePath !== 'string' || !filePath.trim() || filePath.includes('\0')) return null;
-    return extractArtworkFromMp3(filePath);
+    return readTrackCover(filePath);
   });
 
   let refreshController;

@@ -3,8 +3,7 @@ let outcome = null;
 let stage = null;
 let inputError = '';
 let downloadQueue = [];
-let queueStatuses = [];
-let queueReasons = [];
+let completedCount = 0;
 window.isDownloading = false;
 
 // Render download queue
@@ -35,17 +34,15 @@ function renderDownloadQueue() {
 
   queueBox.style.display = 'flex';
   const total = downloadQueue.length;
-  const doneCount = queueStatuses.filter((s) => !['wait', 'down'].includes(s)).length;
   if (queueCounter) {
-    queueCounter.textContent = `${doneCount}/${total}`;
+    queueCounter.textContent = `${completedCount}/${total}`;
   }
 
   queueList.replaceChildren();
   const fragment = document.createDocumentFragment();
 
   for (let i = 0; i < total; i++) {
-    const item = downloadQueue[i];
-    const status = queueStatuses[i] || 'wait';
+    const { track, status, reason } = downloadQueue[i];
 
     const row = document.createElement('div');
     row.className = 'queue-item-row';
@@ -61,23 +58,23 @@ function renderDownloadQueue() {
 
     const titleEl = document.createElement('span');
     titleEl.className = 'queue-item-title';
-    titleEl.textContent = item.title || window.L?.untitled || 'Untitled';
+    titleEl.textContent = track.title || window.L?.untitled || 'Untitled';
 
     const artistEl = document.createElement('span');
     artistEl.className = 'queue-item-artist';
-    artistEl.textContent = item.user?.username || window.L?.defaultArtist || 'MAGNItola';
+    artistEl.textContent = track.user?.username || window.L?.defaultArtist || 'MAGNItola';
 
     row.appendChild(statusBadge);
     row.appendChild(titleEl);
     row.appendChild(artistEl);
-    renderReason(row, i);
+    renderReason(row, status, reason);
     fragment.appendChild(row);
   }
 
   queueList.appendChild(fragment);
 
   // Auto scroll to active/downloading item
-  const activeIdx = queueStatuses.findIndex((s) => s === 'down');
+  const activeIdx = downloadQueue.findIndex(({ status }) => status === 'down');
   if (activeIdx !== -1) {
     const activeRow = document.getElementById(`queueItem-${activeIdx}`);
     if (activeRow) activeRow.scrollIntoView({ block: 'nearest' });
@@ -85,8 +82,11 @@ function renderDownloadQueue() {
 }
 
 function updateQueueItemStatus(index, status, reason = '') {
-  queueStatuses[index] = status;
-  queueReasons[index] = reason;
+  const item = downloadQueue[index];
+  const isComplete = (value) => value !== 'wait' && value !== 'down';
+  completedCount += Number(isComplete(status)) - Number(isComplete(item.status));
+  item.status = status;
+  item.reason = reason;
   const row = document.getElementById(`queueItem-${index}`);
   if (row) {
     const badge = row.querySelector('.queue-item-status');
@@ -96,7 +96,7 @@ function updateQueueItemStatus(index, status, reason = '') {
       badge.textContent = statusInfo.text;
       badge.title = statusInfo.title || '';
     }
-    renderReason(row, index);
+    renderReason(row, status, reason);
     if (status === 'down') {
       row.scrollIntoView({ block: 'nearest' });
     }
@@ -104,8 +104,7 @@ function updateQueueItemStatus(index, status, reason = '') {
 
   const queueCounter = document.getElementById('queueHeaderCount');
   if (queueCounter) {
-    const doneCount = queueStatuses.filter((s) => !['wait', 'down'].includes(s)).length;
-    queueCounter.textContent = `${doneCount}/${downloadQueue.length}`;
+    queueCounter.textContent = `${completedCount}/${downloadQueue.length}`;
   }
 }
 
@@ -138,13 +137,12 @@ function setDownloadProgress(pct) {
   }
 }
 
-function renderReason(row, index) {
+function renderReason(row, status, reasonText) {
   row.querySelector('.queue-reason')?.remove();
-  const status = queueStatuses[index];
   if (status !== 'fail' && status !== 'drm') return;
   const reason = document.createElement('span');
   reason.className = 'queue-reason';
-  reason.textContent = queueReasons[index] || (status === 'drm' ? window.L.drmProtected : window.L.noStream);
+  reason.textContent = reasonText || (status === 'drm' ? window.L.drmProtected : window.L.noStream);
   row.appendChild(reason);
 }
 
@@ -159,14 +157,15 @@ function renderSummary() {
   showInputError(inputError);
   if (stage && activeJob) document.getElementById('lblCurrentStatus').textContent = window.L[stage];
   if (!outcome) return;
-  const count = (status) => queueStatuses.filter((item) => item === status).length;
+  const counts = { done: 0, skip: 0, fail: 0, drm: 0, wait: 0, down: 0 };
+  for (const { status } of downloadQueue) counts[status]++;
   document.getElementById('currentTrackTitle').textContent = window.L[outcome];
   document.getElementById('downloadSizeStats').textContent = '';
   document.getElementById('downloadSpeedStats').textContent = '';
   document.getElementById('downloadCounterStats').textContent = [
-    window.L.saved + ' ' + count('done'),
-    window.L.alreadyExists + ' ' + count('skip'),
-    window.L.errors + ' ' + (count('fail') + count('drm'))
+    window.L.saved + ' ' + counts.done,
+    window.L.alreadyExists + ' ' + counts.skip,
+    window.L.errors + ' ' + (counts.fail + counts.drm)
   ].join(' · ');
 }
 
@@ -185,11 +184,23 @@ function reportTrack(index, update) {
   })) {
     if (update[key] !== undefined) document.getElementById(id).textContent = update[key];
   }
-  if ('artwork' in update) {
-    const img = document.getElementById('albumArtImg');
-    if (update.artwork) img.src = update.artwork;
-    img.style.display = update.artwork ? 'block' : 'none';
-    document.getElementById('albumArtIcon').style.display = update.artwork ? 'none' : 'block';
+  if ('artwork' in update) setDownloadArtwork(update.artwork);
+}
+
+function setDownloadArtwork(artwork) {
+  const img = document.getElementById('albumArtImg');
+  const logo = document.getElementById('albumArtIcon');
+  img.hidden = true;
+  logo.hidden = false;
+  img.onload = null;
+  if (artwork) {
+    img.onload = () => {
+      img.hidden = false;
+      logo.hidden = true;
+    };
+    img.src = artwork;
+  } else {
+    img.removeAttribute('src');
   }
 }
 
@@ -221,8 +232,7 @@ async function startDownloadFlow() {
   const { signal } = controller;
   outcome = null;
   stage = 'resolvingUrl';
-  queueStatuses = [];
-  queueReasons = [];
+  completedCount = 0;
   downloadQueue = [];
   renderDownloadQueue();
   showInputError('');
@@ -249,20 +259,11 @@ async function startDownloadFlow() {
       return;
     }
 
-    downloadQueue = queue;
-    queueStatuses = new Array(queue.length).fill('wait');
+    downloadQueue = queue.map((track) => ({ track, status: 'wait', reason: '' }));
     renderDownloadQueue();
 
     const api = window.electronAPI || null;
     const targetDir = downloadFolder || (api?.getDefaultDownloadsFolder ? await api.getDefaultDownloadsFolder() : null);
-
-    if (subFolder && api?.ensureFolder && targetDir) {
-      const directory = await api.ensureFolder({ folder: targetDir, subFolder });
-      if (directory?.success === false) throw new Error(directory.error || window.L.saveFailed);
-      if (lblCurrentStatus) {
-        lblCurrentStatus.textContent = `${window.L.currentStatus || 'Current download:'} [${subFolder}]`;
-      }
-    }
 
     const total = queue.length;
 
@@ -295,11 +296,12 @@ async function startDownloadFlow() {
   } finally {
     if (signal.aborted) {
       outcome = 'stopped';
-      const index = queueStatuses.indexOf('down');
+      const index = downloadQueue.findIndex(({ status }) => status === 'down');
       if (index >= 0) updateQueueItemStatus(index, 'wait');
     }
     stage = null;
     activeJob = null;
+    setDownloadArtwork(null);
     renderSummary();
     window.isDownloading = false;
     if (btnStartDownload) btnStartDownload.disabled = false;
@@ -313,8 +315,6 @@ async function startDownloadFlow() {
 Object.assign(window, {
   startDownloadFlow,
   stopDownload,
-  updateQueueItemStatus,
-  setDownloadProgress,
   renderDownloadQueue,
   renderSummary,
   showInputError

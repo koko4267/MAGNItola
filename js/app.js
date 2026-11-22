@@ -3,16 +3,24 @@
  */
 
 let quoteInterval = null;
+let defaultDownloadFolder = '';
 window.currentQuoteIndex = 0;
 
 function updateSavePathDisplay() {
   const saveFolderPath = document.getElementById('saveFolderPath');
   const saveLocationInfo = document.getElementById('saveLocationInfo');
-  const downloadFolder = localStorage.getItem('magnitola_save_folder') || '';
-  const display = downloadFolder || window.L?.saveFolderDefault || 'Downloads';
+  const downloadFolder = localStorage.getItem('magnitola_save_folder') || defaultDownloadFolder;
+  const isDriveRoot = /^[a-z]:[\\/]*$/i.test(downloadFolder);
+  const folderName = isDriveRoot
+    ? downloadFolder
+    : downloadFolder
+        .split(/[\\/]+/)
+        .filter(Boolean)
+        .at(-1);
+  const display = folderName || downloadFolder || window.L?.saveFolderDefault || 'Downloads';
 
   if (saveFolderPath) saveFolderPath.textContent = display;
-  if (saveLocationInfo) saveLocationInfo.title = display;
+  if (saveLocationInfo) saveLocationInfo.title = downloadFolder;
 }
 
 function checkQuoteVisibility() {
@@ -73,12 +81,14 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Initialize download folder and scan library asynchronously
-  let downloadFolder = localStorage.getItem('magnitola_save_folder') || '';
+  const downloadFolder = localStorage.getItem('magnitola_save_folder') || '';
   if (!downloadFolder && api?.getDefaultDownloadsFolder) {
     api
       .getDefaultDownloadsFolder()
       .then((defPath) => {
-        if (defPath && !localStorage.getItem('magnitola_save_folder')) {
+        if (!defPath) return;
+        defaultDownloadFolder = defPath;
+        if (!localStorage.getItem('magnitola_save_folder')) {
           updateSavePathDisplay();
           if (typeof window.scanAndLoadLibrary === 'function') {
             window.scanAndLoadLibrary(defPath);

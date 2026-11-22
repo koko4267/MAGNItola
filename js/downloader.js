@@ -12,7 +12,7 @@ function getQueueStatusInfo(status) {
   const statusMap = {
     wait: { text: L.queueStatusWait || 'WAIT', title: '' },
     down: { text: L.queueStatusDown || 'DOWN', title: '' },
-    done: { text: L.queueStatusDone || 'DONE', title: '' },
+    done: { text: L.queueStatusDone || 'DONE', title: L.saved || 'Saved' },
     skip: { text: L.queueStatusSkip || 'SKIP', title: L.alreadyExists || 'Already exists' },
     fail: { text: L.queueStatusFail || 'FAIL', title: L.failed || 'Download failed' },
     drm: { text: L.queueStatusDrm || 'DRM', title: L.drmProtected || 'Protected by DRM (SoundCloud Go+)' }
@@ -139,10 +139,10 @@ function setDownloadProgress(pct) {
 
 function renderReason(row, status, reasonText) {
   row.querySelector('.queue-reason')?.remove();
-  if (status !== 'fail' && status !== 'drm') return;
+  if (status !== 'fail') return;
   const reason = document.createElement('span');
   reason.className = 'queue-reason';
-  reason.textContent = reasonText || (status === 'drm' ? window.L.drmProtected : window.L.noStream);
+  reason.textContent = reasonText || window.L.noStream;
   row.appendChild(reason);
 }
 

@@ -41,6 +41,21 @@ function formatTime(seconds) {
   return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
 
+function retryDelay(ms, signal) {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', cancel);
+      resolve();
+    }, ms);
+    function cancel() {
+      clearTimeout(timer);
+      reject(signal.reason);
+    }
+    signal?.addEventListener('abort', cancel, { once: true });
+  });
+}
+
 // Fetch with exponential backoff and jitter
 async function fetchWithRetry(
   url,
@@ -59,17 +74,18 @@ async function fetchWithRetry(
         if (attempt < retries) {
           const jitter = Math.floor(Math.random() * maxJitter);
           const delay = baseDelayMs * Math.pow(2, attempt - 1) + jitter;
-          await new Promise((r) => setTimeout(r, delay));
+          await retryDelay(delay, options.signal);
           continue;
         }
       }
       return resp;
     } catch (err) {
+      options.signal?.throwIfAborted();
       lastError = err;
       if (attempt < retries) {
         const jitter = Math.floor(Math.random() * maxJitter);
         const delay = baseDelayMs * Math.pow(2, attempt - 1) + jitter;
-        await new Promise((r) => setTimeout(r, delay));
+        await retryDelay(delay, options.signal);
       }
     }
   }

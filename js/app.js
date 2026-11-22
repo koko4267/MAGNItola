@@ -80,21 +80,17 @@ window.addEventListener('DOMContentLoaded', async () => {
       .then((defPath) => {
         if (defPath && !localStorage.getItem('magnitola_save_folder')) {
           updateSavePathDisplay();
-          setTimeout(() => {
-            if (typeof window.scanAndLoadLibrary === 'function') {
-              window.scanAndLoadLibrary(defPath);
-            }
-          }, 50);
+          if (typeof window.scanAndLoadLibrary === 'function') {
+            window.scanAndLoadLibrary(defPath);
+          }
         }
       })
       .catch(() => {});
   } else if (downloadFolder) {
     updateSavePathDisplay();
-    setTimeout(() => {
-      if (typeof window.scanAndLoadLibrary === 'function') {
-        window.scanAndLoadLibrary(downloadFolder);
-      }
-    }, 50);
+    if (typeof window.scanAndLoadLibrary === 'function') {
+      window.scanAndLoadLibrary(downloadFolder);
+    }
   }
 
   checkQuoteVisibility();
@@ -139,6 +135,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         const text = api?.readClipboard ? await api.readClipboard() : '';
         if (text) {
           inputUrl.value = text;
+          window.showInputError('');
           checkQuoteVisibility();
         }
       } catch {
@@ -149,6 +146,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   if (inputUrl) {
     inputUrl.addEventListener('input', () => {
+      window.showInputError('');
       checkQuoteVisibility();
     });
 
@@ -175,7 +173,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   if (btnStopDownload) {
     btnStopDownload.addEventListener('click', () => {
-      window.cancelRequested = true;
+      window.stopDownload();
       btnStopDownload.disabled = true;
     });
   }

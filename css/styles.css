@@ -69,6 +69,9 @@ textarea {
   --green-dark: #7aa53d;
   --accent-gold: #e2c174;
   --accent-red: #d15656;
+  --inset-shadow: #11140e;
+  --active-surface: #3d3a1f;
+  --success-surface: #3b5b24;
 }
 
 body {
@@ -202,7 +205,7 @@ body {
 }
 
 .btn-primary {
-  color: #ffffff;
+  color: var(--text-bright);
   background-color: #55664c;
   border-top-color: #7b946d;
   border-left-color: #7b946d;
@@ -259,7 +262,7 @@ body {
   width: 84px;
   height: 84px;
   min-width: 84px;
-  background-color: #171c14;
+  background-color: var(--border-dark);
   border: 1px solid var(--bg-dark);
   display: flex;
   align-items: center;
@@ -308,10 +311,10 @@ body {
 }
 
 .progress-track {
-  background-color: #171c14;
+  background-color: var(--border-dark);
   height: 18px;
-  border-top: 1px solid #11140e;
-  border-left: 1px solid #11140e;
+  border-top: 1px solid var(--inset-shadow);
+  border-left: 1px solid var(--inset-shadow);
   border-bottom: 1px solid var(--border-light);
   border-right: 1px solid var(--border-light);
   position: relative;
@@ -343,7 +346,7 @@ body {
   justify-content: center;
   font-size: 10px;
   font-weight: bold;
-  color: #ffffff;
+  color: var(--text-bright);
   text-shadow: 1px 1px 0px #000;
 }
 
@@ -425,26 +428,26 @@ body {
 
 .queue-status-wait {
   color: var(--text-muted);
-  background-color: #171c14;
+  background-color: var(--border-dark);
 }
 
 .queue-status-down {
-  color: #ffffff;
-  background-color: #4b6b2a;
+  color: var(--accent-gold);
+  background-color: var(--active-surface);
 }
 
 .queue-status-done {
-  color: #ffffff;
-  background-color: #3b5b24;
+  color: var(--text-bright);
+  background-color: var(--success-surface);
 }
 
 .queue-status-skip {
   color: var(--accent-gold);
-  background-color: #3d3a1f;
+  background-color: var(--active-surface);
 }
 
 .queue-status-fail {
-  color: #ffffff;
+  color: var(--text-bright);
   background-color: var(--accent-red);
 }
 
@@ -614,7 +617,7 @@ body {
   height: 170px;
   max-width: 100%;
   aspect-ratio: 1;
-  background-color: #171c14;
+  background-color: var(--border-dark);
   border-top: 1px solid var(--border-dark);
   border-left: 1px solid var(--border-dark);
   border-bottom: 1px solid var(--border-light);
@@ -720,9 +723,9 @@ body {
 .seek-bar-track-wrapper {
   position: relative;
   height: 14px;
-  background-color: #171c14;
-  border-top: 1px solid #11140e;
-  border-left: 1px solid #11140e;
+  background-color: var(--border-dark);
+  border-top: 1px solid var(--inset-shadow);
+  border-left: 1px solid var(--inset-shadow);
   border-bottom: 1px solid var(--border-light);
   border-right: 1px solid var(--border-light);
   overflow: hidden;
@@ -731,6 +734,7 @@ body {
 }
 
 .player-seek-fill {
+  width: 0;
   position: absolute;
   top: 0;
   left: 0;
@@ -875,4 +879,50 @@ body {
 
 ::-webkit-scrollbar-thumb:active {
   background-color: var(--btn-active);
+}
+
+[data-initial-hidden] {
+  display: none;
+}
+.download-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.folder-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+:focus-visible,
+.track-list-container:focus-visible [aria-selected='true'] {
+  outline: 2px solid var(--accent-gold);
+  outline-offset: -2px;
+}
+.input-text[aria-invalid='true'] {
+  border-color: var(--accent-red);
+}
+.field-error,
+.queue-reason {
+  color: var(--accent-red);
+  overflow-wrap: anywhere;
+}
+.field-error:not(:empty) {
+  margin-top: 4px;
+}
+.queue-item-row {
+  flex-wrap: wrap;
+}
+.queue-reason {
+  flex-basis: 100%;
+}
+.track-item-row {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+}
+
+.seek-bar-track-wrapper:focus-within {
+  outline: 2px solid var(--accent-gold);
 }

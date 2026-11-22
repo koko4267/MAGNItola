@@ -4,6 +4,17 @@
 
 window.LOCALES = {
   en: {
+    stopped: 'Stopped',
+    saved: 'Saved',
+    errors: 'Errors',
+    saveFailed: 'Could not save file',
+    noStream: 'No playable stream',
+    previous: 'Previous track',
+    playPause: 'Play or pause',
+    next: 'Next track',
+    seek: 'Seek',
+    library: 'Library',
+    language: 'Switch language',
     urlPrompt: 'Paste link:',
     placeholder: 'Link to profile, track, playlist, album',
     currentStatus: 'Current download:',
@@ -26,7 +37,7 @@ window.LOCALES = {
     trackPrefix: 'Track',
     fromWord: 'of',
     browse: 'Browse...',
-    noTracksInFolder: 'No MP3 files found in folder.',
+    noTracksInFolder: 'No audio files found in folder.',
     playing: 'Playing',
     paused: 'Paused',
     noArtwork: 'NO ARTWORK',
@@ -39,7 +50,7 @@ window.LOCALES = {
     queueTitle: 'Download queue',
     queueStatusWait: 'WAIT',
     queueStatusDown: 'DOWN',
-    queueStatusDone: 'DONE',
+    queueStatusDone: 'SAVED',
     queueStatusSkip: 'SKIP',
     queueStatusFail: 'FAIL',
     queueStatusDrm: 'DRM',
@@ -54,6 +65,17 @@ window.LOCALES = {
     ]
   },
   ru: {
+    stopped: 'Остановлено',
+    saved: 'Сохранено',
+    errors: 'Ошибок',
+    saveFailed: 'Не удалось сохранить файл',
+    noStream: 'Нет доступного аудиопотока',
+    previous: 'Предыдущий трек',
+    playPause: 'Воспроизведение или пауза',
+    next: 'Следующий трек',
+    seek: 'Перемотка',
+    library: 'Библиотека',
+    language: 'Сменить язык',
     urlPrompt: 'Вставьте ссылку:',
     placeholder: 'Ссылка на профиль, трек, плейлист, альбом',
     currentStatus: 'Текущая загрузка:',
@@ -76,7 +98,7 @@ window.LOCALES = {
     trackPrefix: 'Трек',
     fromWord: 'из',
     browse: 'Обзор...',
-    noTracksInFolder: 'В папке не найдены MP3 треки.',
+    noTracksInFolder: 'В папке нет аудиофайлов.',
     playing: 'Играет',
     paused: 'Пауза',
     noArtwork: 'НЕТ ОБЛОЖКИ',
@@ -89,7 +111,7 @@ window.LOCALES = {
     queueTitle: 'Очередь загрузки',
     queueStatusWait: 'ЖДЕТ',
     queueStatusDown: 'ЗАГР',
-    queueStatusDone: 'ГОТОВО',
+    queueStatusDone: 'СОХРАНЕНО',
     queueStatusSkip: 'ПРОПУСК',
     queueStatusFail: 'СБОЙ',
     queueStatusDrm: 'DRM',
@@ -115,6 +137,24 @@ function setLanguage(lang) {
   localStorage.setItem('magnitola_lang', lang);
   L = window.LOCALES[lang];
   window.L = L;
+  document.documentElement.lang = lang;
+  for (const [id, label] of Object.entries({
+    btnPlayerPrev: L.previous,
+    btnPlayerPlay: L.playPause,
+    btnPlayerNext: L.next,
+    playerSeekInput: L.seek,
+    playerTrackList: L.library,
+    btnToggleLang: L.language,
+    btnBrowseFolder: L.browse,
+    btnPaste: L.paste,
+    btnStartDownload: L.startDownload,
+    btnStopDownload: L.stopDownload
+  })) {
+    const control = document.getElementById(id);
+    control.title = label;
+    control.setAttribute('aria-label', label);
+  }
+  document.getElementById('saveFolderLabel').textContent = L.saveLocation;
 
   const langLabel = document.getElementById('langLabel');
   const flagImg = document.getElementById('flagImg');
@@ -153,6 +193,8 @@ function setLanguage(lang) {
   if (typeof window.isDownloading !== 'undefined' && !window.isDownloading && currentTrackTitle) {
     currentTrackTitle.textContent = L.waitingInput;
   }
+
+  window.renderSummary?.();
 
   if (typeof window.renderTrackList === 'function') {
     window.renderTrackList();

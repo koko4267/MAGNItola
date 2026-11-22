@@ -9,6 +9,25 @@ let isPlaying = false;
 let isDraggingSeek = false;
 let isPointerDownOnSeek = false;
 
+let selectedFolder = '';
+let pendingScan = null;
+let selectedIndex = 0;
+const coverRequests = new Map();
+
+function loadCover(path) {
+  if (!coverRequests.has(path)) {
+    const request = window.electronAPI
+      .readTrackCover(path)
+      .then((cover) => {
+        if (cover) setArtworkCache(path, cover);
+        return cover;
+      })
+      .finally(() => coverRequests.delete(path));
+    coverRequests.set(path, request);
+  }
+  return coverRequests.get(path);
+}
+
 const artworkCache = new Map();
 
 function setArtworkCache(key, value) {
@@ -47,11 +66,14 @@ function updatePlayerButtonsState() {
   if (btnPlayerNext) btnPlayerNext.disabled = !hasTracks;
 }
 
-function addTrackToPlayer(track) {
+function addTrackToPlayer(track, folder) {
+  if (folder && selectedFolder && folder.toLowerCase() !== selectedFolder) return;
+  pendingScan?.added.set(track.filePath.toLowerCase(), track);
   const existingIdx = libraryTracks.findIndex((t) => t.filePath.toLowerCase() === track.filePath.toLowerCase());
   if (existingIdx !== -1) {
     libraryTracks[existingIdx] = track;
   } else {
+    if (libraryTracks.length) selectedIndex++;
     libraryTracks.unshift(track);
   }
   if (track.artworkDataUrl) {
@@ -64,13 +86,32 @@ function addTrackToPlayer(track) {
 async function scanAndLoadLibrary(folder) {
   const api = window.electronAPI || null;
   if (!api?.scanLibrary || !folder) return;
+  const scan = { added: new Map() };
+  pendingScan = scan;
+  if (selectedFolder !== folder.toLowerCase()) {
+    selectedFolder = folder.toLowerCase();
+    libraryTracks = [];
+    selectedIndex = 0;
+    renderTrackList();
+    updatePlayerButtonsState();
+  }
   try {
     const tracks = await api.scanLibrary(folder);
-    libraryTracks = tracks || [];
+    if (pendingScan !== scan) return;
+    const previousPath = libraryTracks[selectedIndex]?.filePath;
+    libraryTracks = [...scan.added.values()]
+      .reverse()
+      .concat((tracks || []).filter((track) => !scan.added.has(track.filePath.toLowerCase())));
+    selectedIndex = Math.max(
+      0,
+      libraryTracks.findIndex((track) => track.filePath === previousPath)
+    );
     renderTrackList();
     updatePlayerButtonsState();
   } catch (err) {
     console.error('Scan library error:', err);
+  } finally {
+    if (pendingScan === scan) pendingScan = null;
   }
 }
 
@@ -96,17 +137,17 @@ function createTrackItemElement(tr, index, topPx) {
 
   const row = document.createElement('div');
   row.className = `track-item-row ${isActive ? 'active' : ''}`;
-  row.style.position = 'absolute';
+  row.id = 'library-track-' + index;
+  row.setAttribute('role', 'option');
   row.style.top = `${topPx}px`;
-  row.style.left = '6px';
-  row.style.right = '6px';
+
   row.setAttribute('data-index', String(index));
 
   const artBox = document.createElement('div');
   artBox.className = 'track-item-art';
 
   const img = document.createElement('img');
-  img.alt = 'Cover';
+  img.alt = '';
   img.style.display = 'none';
 
   const icon = document.createElement('span');
@@ -125,11 +166,9 @@ function createTrackItemElement(tr, index, topPx) {
   } else if (tr.hasCover) {
     const api = window.electronAPI || null;
     if (api?.readTrackCover) {
-      api
-        .readTrackCover(tr.filePath)
+      loadCover(tr.filePath)
         .then((coverDataUrl) => {
           if (coverDataUrl) {
-            setArtworkCache(tr.filePath, coverDataUrl);
             img.src = coverDataUrl;
             img.style.display = 'block';
             icon.style.display = 'none';
@@ -157,7 +196,8 @@ function createTrackItemElement(tr, index, topPx) {
   row.appendChild(metaBox);
 
   row.addEventListener('click', () => {
-    playTrack(libraryTracks[index]);
+    selectedIndex = index;
+    playTrack(tr);
   });
 
   return row;
@@ -169,6 +209,7 @@ function renderTrackList() {
   if (!container) return;
 
   if (libraryTracks.length === 0) {
+    container.removeAttribute('aria-activedescendant');
     container.replaceChildren();
     const empty = document.createElement('div');
     empty.className = 'track-list-empty';
@@ -200,15 +241,33 @@ function renderTrackList() {
   const startIdx = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan);
   const endIdx = Math.min(libraryTracks.length, Math.ceil((scrollTop + clientHeight) / rowHeight) + overscan);
 
-  spacer.replaceChildren();
-  const fragment = document.createDocumentFragment();
-
-  for (let i = startIdx; i < endIdx; i++) {
-    const rowEl = createTrackItemElement(libraryTracks[i], i, i * rowHeight);
-    fragment.appendChild(rowEl);
+  const keep = new Set();
+  for (let i = startIdx; i < endIdx; i++) keep.add(i);
+  if (selectedIndex >= 0 && document.activeElement === container) keep.add(selectedIndex);
+  const rows = new Map(Array.from(spacer.children, (row) => [Number(row.dataset.index), row]));
+  for (const [index, row] of rows) {
+    if (!keep.has(index) || row.track !== libraryTracks[index]) {
+      row.remove();
+      rows.delete(index);
+    }
   }
-
-  spacer.appendChild(fragment);
+  container.removeAttribute('aria-activedescendant');
+  let previous = null;
+  for (const index of [...keep].sort((a, b) => a - b)) {
+    const track = libraryTracks[index];
+    let row = rows.get(index);
+    if (!row) {
+      row = createTrackItemElement(track, index, index * rowHeight);
+      row.track = track;
+      spacer.insertBefore(row, previous ? previous.nextElementSibling : spacer.firstElementChild);
+    }
+    previous = row;
+    row.setAttribute('aria-posinset', String(index + 1));
+    row.setAttribute('aria-setsize', String(libraryTracks.length));
+    row.setAttribute('aria-selected', String(index === selectedIndex));
+    row.classList.toggle('active', track.filePath === currentPlayingTrack?.filePath);
+    if (index === selectedIndex) container.setAttribute('aria-activedescendant', row.id);
+  }
 }
 
 function playTrack(track) {
@@ -241,11 +300,9 @@ function playTrack(track) {
     if (playerLargeArtImg) playerLargeArtImg.style.display = 'none';
     if (playerLargeArtPlaceholder) playerLargeArtPlaceholder.style.display = 'flex';
 
-    window.electronAPI
-      .readTrackCover(track.filePath)
+    loadCover(track.filePath)
       .then((dataUrl) => {
         if (dataUrl) {
-          setArtworkCache(track.filePath, dataUrl);
           if (currentPlayingTrack && currentPlayingTrack.filePath === track.filePath) {
             if (playerLargeArtImg) {
               playerLargeArtImg.src = dataUrl;
@@ -400,6 +457,22 @@ function initPlayerListeners() {
   if (btnPlayerNext) btnPlayerNext.addEventListener('click', nextTrack);
 
   if (playerTrackList) {
+    playerTrackList.addEventListener('focus', renderTrackList);
+    playerTrackList.addEventListener('keydown', (event) => {
+      if (!libraryTracks.length || !['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
+      event.preventDefault();
+      let index = selectedIndex;
+      if (event.key === 'Enter') return playTrack(libraryTracks[index]);
+      index = Math.min(libraryTracks.length - 1, Math.max(0, index + (event.key === 'ArrowDown' ? 1 : -1)));
+      selectedIndex = index;
+      const height = window.APP_CONFIG.TRACK_ROW_HEIGHT_PX;
+      const top = index * height;
+      if (top < playerTrackList.scrollTop) playerTrackList.scrollTop = top;
+      else if (top + height > playerTrackList.scrollTop + playerTrackList.clientHeight) {
+        playerTrackList.scrollTop = top + height - playerTrackList.clientHeight;
+      }
+      renderTrackList();
+    });
     let scrollRafId = null;
     playerTrackList.addEventListener(
       'scroll',

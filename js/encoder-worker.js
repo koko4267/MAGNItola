@@ -3,18 +3,10 @@
 
 importScripts('../lame.min.js');
 
-let isCancelled = false;
-
 self.onmessage = function (e) {
   const data = e.data;
 
-  if (data.type === 'cancel') {
-    isCancelled = true;
-    return;
-  }
-
   if (data.type === 'encode') {
-    isCancelled = false;
     try {
       const { leftChannel, rightChannel, channels, sampleRate, bitrate } = data;
 
@@ -29,11 +21,6 @@ self.onmessage = function (e) {
       let lastProgressReport = Date.now();
 
       for (let i = 0; i < numSamples; i += sampleBlockSize) {
-        if (isCancelled) {
-          self.postMessage({ type: 'cancelled' });
-          return;
-        }
-
         const blockSize = Math.min(sampleBlockSize, numSamples - i);
         const leftChunk = new Int16Array(blockSize);
         const rightChunk = channels > 1 ? new Int16Array(blockSize) : leftChunk;

@@ -14,6 +14,7 @@
     "build": "electron-builder --win nsis zip --x64 --publish never",
     "build:installer": "electron-builder --win nsis --x64 --publish never",
     "build:zip": "electron-builder --win zip --x64 --publish never",
+    "test": "node --test",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{js,html,css,json}\""
@@ -71,6 +72,7 @@
     "files": [
       "index.html",
       "main.js",
+      "library.cjs",
       "preload.js",
       "lame.min.js",
       "css/**/*",

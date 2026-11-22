@@ -5,13 +5,13 @@ export default [
   js.configs.recommended,
   {
     ignores: [
-      'dist/**',
+      'dist/**', '.cache/**',
       'node_modules/**',
       'lame.min.js'
     ]
   },
   {
-    files: ['main.js', 'preload.js'],
+    files: ['main.js', 'preload.js', 'library.cjs', 'test/**/*.cjs'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'commonjs',

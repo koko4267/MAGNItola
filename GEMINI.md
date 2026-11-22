@@ -38,7 +38,7 @@ Always execute commands from the project root (repository root):
 | :--- | :--- | :--- |
 | **Install Dependencies** | `npm install` | Installs devDependencies (`electron`, `electron-builder`) |
 | **Run in Dev Mode** | `npm start` | Launches Electron (`electron .`) |
-| **Build for Production** | `npm run build` | Builds `dist/MAGNItola-Windows.zip` (Windows x64 zip target) |
+| **Build for Production** | `npm run build` | Builds `dist/MAGNItola-<version>.zip` and a Windows x64 NSIS installer |
 | **Build (Windows CLI)** | `npm.cmd run build` | Recommended syntax when running in PowerShell / Windows cmd |
 
 ---
@@ -56,7 +56,11 @@ magnitola/
 ├── package-lock.json     # Locked dependency tree
 ├── main.js               # Electron Main Process (Lifecycle, IPC, Media Protocol, Security)
 ├── preload.js            # Secure IPC bridge between Main and Renderer
-├── index.html            # Complete Renderer Process (UI Layout, Styles, Logic, Player)
+├── index.html            # Renderer markup and script entry points
+├── css/styles.css        # Shared retro panel and control styles
+├── js/                   # Renderer modules and MP3 encoder worker
+├── library.cjs           # Bounded asynchronous local metadata scan
+├── test/                 # Offline regression tests (npm test)
 ├── fonts/                # Bundled JetBrains Mono webfonts (WOFF2 & license)
 ├── lame.min.js           # Client-side MP3 encoder library
 ├── demopic.jpg           # Application screenshot for documentation
@@ -70,7 +74,7 @@ magnitola/
 
 ### File Breakdown
 
-- **`.github/workflows/build.yml`**: GitHub Actions workflow that triggers on tags (`v*`) or manual dispatch to build `MAGNItola-Windows.zip` and publish a GitHub release.
+- **`.github/workflows/build.yml`**: GitHub Actions workflow that triggers on tags (`v*`) or manual dispatch to build `MAGNItola-<version>.zip` and publish a GitHub release.
 - **`main.js` (Main Process)**:
   - **Single Instance**: Enforces single-instance lock via `app.requestSingleInstanceLock()`.
   - **Ephemeral Session**: Creates isolated temp directory in `os.tmpdir()` (`magnitola-session-${pid}`) and cleans up on exit (`will-quit` and startup cleanup of stale folders). Disables disk cache and GPU shader caches.
@@ -90,7 +94,8 @@ magnitola/
   - Renderer cannot directly invoke Node.js or `ipcRenderer` outside of exposed methods.
 
 - **`index.html` (Renderer Process)**:
-  - Contains complete styling, UI structure, and client scripts.
+  - Loads styles from css/styles.css and the vanilla JS modules from js/.
+  - soundcloud.js resolves links and playlist metadata. download-track.js processes a single track. downloader.js owns cancellation, queue state and download UI. app.js wires controls.
   - **Audio Player Engine**: HTML5 `<audio>` playback using `media://` URLs, seekbar progress, track queue management.
   - **SoundCloud Integration**: API endpoint communication for resolving tracks, sets, and user likes; stream chunk downloading.
   - **MP3 Encoder & Tagger**: Feeds raw audio frames into `lame.min.js` and synthesizes ID3v2.3 tag headers with APIC cover frames before saving.
@@ -126,15 +131,15 @@ Any agent modifying this codebase **must strictly adhere** to these security req
     - Text: `--text-main: #d0dcce`, `--text-bright: #ffffff`, `--text-muted: #8c9c86`
     - Accents: `--green-bar: #95c34e` (progress), `--accent-gold: #e2c174` (warnings/active), `--accent-red: #d15656` (errors/stop)
 - **Localization**:
-  - Any new UI text or status message **must** be added to both `ru` and `en` blocks in the `LOCALES` object inside `index.html`.
+  - Any new UI text or status message **must** be added to both `ru` and `en` blocks in the `LOCALES` object inside `js/locales.js`.
 
 ---
 
 ## 7. Guidelines for AI Agents Working on this Codebase
 
-- **Single-file Renderer**: `index.html` houses the entire renderer logic. Maintain modularity with clearly demarcated sections and comments when editing.
+- **Renderer modules**: Keep player, download, localization, and startup logic in their corresponding js/ files.
 - **IPC Modifications**: If adding a new feature requiring OS capabilities (file IO, dialogs, clipboard, etc.):
   1. Implement handler in `main.js` inside `registerIpcHandlers()` with sender validation (`isTrustedSender`).
   2. Expose the function in `preload.js` under `window.electronAPI`.
-  3. Call `window.electronAPI.<method>()` in `index.html`.
+  3. Call `window.electronAPI.<method>()` in the relevant renderer module.
 - **Packaging Verification**: Always ensure relative paths for assets (`icon.ico`, images, `lame.min.js`) so that `electron-builder` packs them cleanly into `dist/`.

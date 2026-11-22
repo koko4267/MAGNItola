@@ -22,7 +22,8 @@
               type="text"
               class="input-text"
               id="inputUrl"
-              aria-label="SoundCloud URL"
+              aria-labelledby="lblUrlPrompt"
+              aria-describedby="inputError"
               placeholder="Link to profile, track, playlist, album"
               spellcheck="false"
               autocomplete="off"
@@ -31,16 +32,17 @@
             <button class="btn btn-primary" id="btnStartDownload">Download</button>
             <button class="btn" id="btnStopDownload" disabled>Stop</button>
           </div>
+          <div id="inputError" role="alert" class="field-error"></div>
         </div>
 
         <!-- Current Download & Queue Box -->
-        <div class="groupbox" style="flex: 1; display: flex; flex-direction: column; min-height: 0">
+        <div class="groupbox download-panel">
           <div class="groupbox-title" id="lblCurrentStatus">Current download:</div>
 
           <div class="download-card">
             <div class="album-art-box" id="albumArtBox">
               <img id="albumArtIcon" class="album-art-placeholder-logo" src="magnitolalogo.jpg" alt="MAGNItola" />
-              <img id="albumArtImg" src="" alt="Cover" style="display: none" />
+              <img id="albumArtImg" src="" alt="Cover" data-initial-hidden />
             </div>
 
             <div class="track-details-col">
@@ -59,7 +61,7 @@
                   <span id="downloadCounterStats">Track 0 of 0</span>
                 </div>
               </div>
-              <div class="quote-box" id="quoteDisplay" style="display: none">💬 «God invented computers»</div>
+              <div class="quote-box" id="quoteDisplay" data-initial-hidden>💬 «God invented computers»</div>
             </div>
           </div>
 
@@ -77,9 +79,9 @@
             </a>
 
             <div class="bottom-right-group">
-              <div style="display: flex; align-items: center; gap: 4px">
+              <div class="folder-controls">
                 <div class="save-path-row" id="saveLocationInfo" title="Downloads">
-                  Save folder: <strong id="saveFolderPath">Downloads</strong>
+                  <span id="saveFolderLabel">Save folder:</span> <strong id="saveFolderPath">Downloads</strong>
                 </div>
                 <button class="btn btn-sm" id="btnBrowseFolder" title="Browse...">Browse...</button>
               </div>
@@ -97,7 +99,7 @@
           </div>
 
           <!-- Download queue -->
-          <div class="queue-box" id="downloadQueueBox" style="display: none">
+          <div class="queue-box" id="downloadQueueBox" data-initial-hidden>
             <div class="queue-header-row">
               <span id="queueHeaderTitle">Download queue</span>
               <span id="queueHeaderCount">0/0</span>
@@ -109,9 +111,9 @@
 
       <!-- Player Sidebar -->
       <div class="player-sidebar">
-        <div class="large-art-container" id="playerLargeArtContainer" style="display: none">
+        <div class="large-art-container" id="playerLargeArtContainer" data-initial-hidden>
           <div class="large-art-box">
-            <img id="playerLargeArtImg" src="" alt="Album Art" class="large-art-img" style="display: none" />
+            <img id="playerLargeArtImg" src="" alt="Album Art" class="large-art-img" data-initial-hidden />
             <div id="playerLargeArtPlaceholder" class="large-art-placeholder">
               <span class="large-art-placeholder-icon">♫</span>
               <span class="large-art-placeholder-label" id="playerLargeArtPlaceholderLabel">NO ARTWORK</span>
@@ -152,7 +154,7 @@
 
           <div class="player-seek-container">
             <div class="seek-bar-track-wrapper" id="playerSeekWrapper">
-              <div class="player-seek-fill" id="playerSeekFill" style="width: 0%"></div>
+              <div class="player-seek-fill" id="playerSeekFill"></div>
               <input
                 type="range"
                 class="player-seek-input"
@@ -174,7 +176,7 @@
         </div>
 
         <!-- Track list -->
-        <div class="track-list-container" id="playerTrackList">
+        <div class="track-list-container" id="playerTrackList" tabindex="0" role="listbox" aria-label="Library">
           <div class="track-list-empty" id="playerTrackListEmpty">
             <p>No MP3 files found in folder.</p>
           </div>
@@ -188,6 +190,8 @@
     <script src="js/utils.js"></script>
     <script src="js/id3.js"></script>
     <script src="js/player.js"></script>
+    <script src="js/soundcloud.js"></script>
+    <script src="js/download-track.js"></script>
     <script src="js/downloader.js"></script>
     <script src="js/app.js"></script>
   </body>

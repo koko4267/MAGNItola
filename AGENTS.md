@@ -12,8 +12,8 @@ Run these commands from the repository root. Use Node.js 24 for local checks to 
 | Launch the app | `npm.cmd start` |
 | Run the offline regression tests | `npm.cmd test` |
 | Lint JavaScript | `npm.cmd run lint` |
-| Build the NSIS installer and portable ZIP in `dist/` | `npm.cmd run build` |
-| Build only the installer or ZIP | `npm.cmd run build:installer` or `npm.cmd run build:zip` |
+| Build the NSIS installer in `dist/` | `npm.cmd run build` |
+| Build only the installer | `npm.cmd run build:installer` |
 
 `npm run format` and `npm run lint:fix` run across the project. For a targeted change, apply formatting and lint fixes only to the files you edit. Follow `.prettierrc` and `eslint.config.mjs`. `lame.min.js` is a vendored library.
 

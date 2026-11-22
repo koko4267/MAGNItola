@@ -27,9 +27,8 @@ SoundCloud music downloader and offline player for Windows.
 ```bash
 npm install
 npm start                     # run in dev mode
-npm.cmd run build             # build installer and zip -> dist/
+npm.cmd run build             # build installer -> dist/MAGNItola-Setup-{version}.exe
 npm.cmd run build:installer   # build installer -> dist/MAGNItola-Setup-{version}.exe
-npm.cmd run build:zip         # build portable zip -> dist/MAGNItola-{version}.zip
 ```
 
 ### License
@@ -56,9 +55,8 @@ npm.cmd run build:zip         # build portable zip -> dist/MAGNItola-{version}.z
 ```bash
 npm install
 npm start                     # запуск в режиме разработки
-npm.cmd run build             # сборка инсталлятора и zip -> dist/
+npm.cmd run build             # сборка инсталлятора -> dist/MAGNItola-Setup-{version}.exe
 npm.cmd run build:installer   # сборка инсталлятора -> dist/MAGNItola-Setup-{version}.exe
-npm.cmd run build:zip         # сборка portable zip -> dist/MAGNItola-{version}.zip
 ```
 
 ### Лицензия

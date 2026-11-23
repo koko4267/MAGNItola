@@ -85,18 +85,16 @@ function trimStem(stem, maxLength) {
   return truncated.trimEnd();
 }
 
-function inspectTarget(directory, fileName, track) {
+async function inspectTarget(directory, fileName, track) {
   const filePath = path.join(directory, fileName);
-  return (async () => {
-    try {
-      const stat = await fs.lstat(filePath);
-      const exists = stat.isFile() && (await matchesTrack(filePath, stat.size, track));
-      return { exists, occupied: true, filePath, fileName };
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-      return { exists: false, occupied: false, filePath, fileName };
-    }
-  })();
+  try {
+    const stat = await fs.lstat(filePath);
+    const exists = stat.isFile() && (await matchesTrack(filePath, stat.size, track));
+    return { exists, occupied: true, filePath, fileName };
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    return { exists: false, occupied: false, filePath, fileName };
+  }
 }
 
 async function findTrackTarget(directory, track) {

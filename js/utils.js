@@ -10,11 +10,7 @@ function sanitizeFileName(name) {
 
 function sanitizeFolderName(name) {
   if (!name || typeof name !== 'string') return '';
-  let clean = name
-    .replace(/[<>:"/\\|?*]+/g, '_')
-    .replace(/[\x00-\x1f]/g, '')
-    .trim()
-    .replace(/\.+$/, '');
+  let clean = sanitizeFileName(name);
   const reserved = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
   if (reserved.test(clean)) clean += '_';
   return clean;

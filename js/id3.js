@@ -42,8 +42,8 @@ function createId3v23Tag(title, artist, artworkBuffer, extra = {}) {
     return packFrame('COMM', new Uint8Array(bytes));
   }
 
-  function makeUrlFrame(frameId, url) {
-    if (!url || typeof url !== 'string' || frameId !== 'WXXX') return null;
+  function makeUrlFrame(url) {
+    if (!url || typeof url !== 'string') return null;
     const cleanUrl = url.trim();
     if (!cleanUrl) return null;
 
@@ -67,45 +67,22 @@ function createId3v23Tag(title, artist, artworkBuffer, extra = {}) {
     return packFrame('APIC', body);
   }
 
-  const frames = [];
-
-  const tit2 = makeTextFrame('TIT2', title);
-  const tpe1 = makeTextFrame('TPE1', artist);
-  if (tit2) frames.push(tit2);
-  if (tpe1) frames.push(tpe1);
-
-  if (extra.album) {
-    const talb = makeTextFrame('TALB', String(extra.album));
-    if (talb) frames.push(talb);
-  }
-  if (extra.trackNumber) {
-    const trck = makeTextFrame('TRCK', String(extra.trackNumber));
-    if (trck) frames.push(trck);
-  }
-  if (extra.year) {
-    const tyer = makeTextFrame('TYER', String(extra.year));
-    if (tyer) frames.push(tyer);
-  }
-  if (extra.soundCloudId && /^\d+$/.test(String(extra.soundCloudId))) {
-    const identity = new TextEncoder().encode(`\0SoundCloud Track ID\0${extra.soundCloudId}`);
-    frames.push(packFrame('TXXX', identity));
-  }
-  if (extra.genre) {
-    const tcon = makeTextFrame('TCON', String(extra.genre));
-    if (tcon) frames.push(tcon);
-  }
-  if (extra.comment) {
-    const comm = makeCommentFrame(extra.comment);
-    if (comm) frames.push(comm);
-  }
-  if (extra.url) {
-    const wxxx = makeUrlFrame('WXXX', extra.url);
-    if (wxxx) frames.push(wxxx);
-  }
-  if (artworkBuffer) {
-    const apic = makeApicFrame(artworkBuffer);
-    if (apic) frames.push(apic);
-  }
+  const identity =
+    extra.soundCloudId && /^\d+$/.test(String(extra.soundCloudId))
+      ? new TextEncoder().encode(`\0SoundCloud Track ID\0${extra.soundCloudId}`)
+      : null;
+  const frames = [
+    makeTextFrame('TIT2', title),
+    makeTextFrame('TPE1', artist),
+    makeTextFrame('TALB', extra.album && String(extra.album)),
+    makeTextFrame('TRCK', extra.trackNumber && String(extra.trackNumber)),
+    makeTextFrame('TYER', extra.year && String(extra.year)),
+    packFrame('TXXX', identity),
+    makeTextFrame('TCON', extra.genre && String(extra.genre)),
+    makeCommentFrame(extra.comment),
+    makeUrlFrame(extra.url),
+    makeApicFrame(artworkBuffer)
+  ].filter(Boolean);
 
   const totalFramesSize = frames.reduce((acc, f) => acc + f.length, 0);
 

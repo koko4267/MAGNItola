@@ -97,6 +97,33 @@ function mockAudioDownload(audio, overrides) {
   });
 }
 
+test('a refreshed SoundCloud client ID is reused by later playlist requests', async () => {
+  const track = trackFixture();
+  const requests = [];
+  const storage = new Map();
+  const app = renderer(['config', 'utils', 'soundcloud'], {
+    localStorage: {
+      getItem: (key) => storage.get(key),
+      setItem: (key, value) => storage.set(key, value)
+    },
+    electronAPI: { refreshSoundCloudClientId: async () => 'refreshed' },
+    fetch: async (input) => {
+      const url = new URL(input);
+      requests.push([url.pathname, url.searchParams.get('client_id')]);
+      if (requests.length === 1) return new Response(null, { status: 401 });
+      if (url.pathname === '/resolve') return Response.json({ kind: 'playlist', tracks: [{ id: track.id }] });
+      return Response.json([track]);
+    }
+  });
+  const result = await app.resolveSoundCloudUrl('https://soundcloud.com/artist/sets/test', new AbortController().signal);
+  assert.equal(result.tracks[0].id, track.id);
+  assert.deepEqual(requests, [
+    ['/resolve', app.APP_CONFIG.SOUNDCLOUD_CLIENT_ID],
+    ['/resolve', 'refreshed'],
+    ['/tracks', 'refreshed']
+  ]);
+});
+
 test('playlist retains source positions when batch results arrive reversed and IDs repeat', async () => {
   const track = (id) => ({ id, media: { transcodings: [] } });
   const responses = [{ kind: 'playlist', tracks: [{ id: 2 }, track(1), { id: 3 }, { id: 2 }] }, [track(3), track(2)]];
@@ -225,6 +252,48 @@ test('HLS follows redirected playlist URLs and keeps segments in playlist order'
   );
 });
 
+test('declared HLS streams accept extensionless playlist URLs', async () => {
+  const track = trackFixture();
+  track.media.transcodings[0].format.protocol = 'hls';
+  const app = mockAudioDownload(null, {
+    fetch: async (url) => {
+      if (url.includes('stream?')) return Response.json({ url: 'https://fixture/manifest' });
+      if (url.endsWith('/manifest')) return new Response('#EXTM3U\nsegment');
+      assert.equal(url, 'https://fixture/segment');
+      return new Response(mp3Frames());
+    },
+    electronAPI: { saveTrack: async () => ({ success: true, filePath: 'out/test.mp3' }) },
+    addTrackToPlayer() {}
+  });
+  assert.equal(await app.downloadTrack(track, 1, 1, null, {}, 'out', new AbortController().signal, () => {}), true);
+});
+
+test('Stop releases the queue before a native decode finishes', async () => {
+  const started = Promise.withResolvers();
+  const decode = Promise.withResolvers();
+  let closed = false;
+  const app = mockAudioDownload(Uint8Array.of(1), {
+    AudioContext: class {
+      decodeAudioData() {
+        started.resolve();
+        return decode.promise;
+      }
+      async close() {
+        closed = true;
+      }
+    }
+  });
+  const controller = new AbortController();
+  const download = app.downloadTrack(trackFixture(), 1, 1, null, {}, 'out', controller.signal, () => {});
+  await started.promise;
+  controller.abort();
+  const cancelled = assert.rejects(download, { name: 'AbortError' });
+  await new Promise(setImmediate);
+  assert.equal(closed, true);
+  decode.resolve();
+  await cancelled;
+});
+
 test('AAC with and without ID3 is decoded and encoded to MP3 at 192 kbps', async () => {
   const adts = Uint8Array.of(0xff, 0xf1, 0x50, 0x80, 0, 0xff, 0xfc, 0);
   const tag = renderer(['id3']).createId3v23Tag('AAC title', 'Artist');
@@ -285,7 +354,7 @@ test('a 503 from the second likes page prevents downloading a partial queue and 
   assert.equal(requests, 2 + app.APP_CONFIG.MAX_FETCH_RETRIES);
   assert.equal(app.document.getElementById('inputError').textContent, app.L.likesPageFailed);
   assert.ok(app.L.likesPageFailed);
-  assert.equal(app.isDownloading, false);
+  assert.equal(app.isDownloading(), false);
 });
 
 test('likes pagination stops on a repeated page even if its query parameters are reordered', async () => {
@@ -361,7 +430,7 @@ test('Enter twice starts one job, Stop aborts the request, and restart is availa
     assert.equal(calls, attempt);
     app.document.getElementById('btnStopDownload').click();
     await new Promise(setImmediate);
-    assert.equal(app.isDownloading, false);
+    assert.equal(app.isDownloading(), false);
     assert.equal(app.document.getElementById('currentTrackTitle').textContent, 'Stopped');
   }
 });
@@ -509,6 +578,9 @@ test('a rejected playback request leaves the play button available for retry', a
   button.click();
   assert.equal(attempts, 2);
   assert.equal(button.textContent, '❚❚');
+  app.electronAPI = { scanLibrary: async () => [] };
+  await app.scanAndLoadLibrary('empty');
+  assert.equal(button.disabled, false);
   button.click();
   assert.equal(button.textContent, '▶');
 });
@@ -608,4 +680,21 @@ test('concurrent saves preserve distinct SoundCloud tracks with the same filenam
   assert.equal((await checkTrackFile(directory, payload(2))).filePath, first.filePath);
   const unique = await saveTrackFile(directory, payload(4));
   assert.equal(unique.fileName, fileName);
+});
+
+test('saving chooses another name if the intended file appears while writing', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'magnitola-test-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const fileName = 'Artist - Test.mp3';
+  const originalPath = path.join(directory, fileName);
+  const writeFile = fs.promises.writeFile;
+  t.mock.method(fs.promises, 'writeFile', async (...args) => {
+    await writeFile(...args);
+    await writeFile(originalPath, 'another file');
+  });
+
+  const result = await saveTrackFile(directory, { fileName, soundCloudId: 42, buffer: mp3Frames() });
+  assert.equal(result.fileName, 'Artist - Test [42].mp3');
+  assert.equal(fs.readFileSync(originalPath, 'utf8'), 'another file');
+  assert.ok(fs.readdirSync(directory).every((name) => name.endsWith('.mp3')));
 });

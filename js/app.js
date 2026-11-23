@@ -28,7 +28,7 @@ function checkQuoteVisibility() {
   const quoteDisplay = document.getElementById('quoteDisplay');
   if (!inputUrl || !quoteDisplay) return;
 
-  if (inputUrl.value.trim().length > 0 || window.isDownloading) {
+  if (inputUrl.value.trim().length > 0 || window.isDownloading()) {
     quoteDisplay.style.display = 'block';
     const quoteList = window.L?.quotes || [];
     const q = quoteList[window.currentQuoteIndex] || 'God invented computers';

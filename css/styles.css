@@ -78,27 +78,6 @@ body {
   overflow-y: auto;
 }
 
-/* Update Banner (6.2) */
-.update-banner {
-  display: none;
-  background-color: var(--bg-panel);
-  border-top: 1px solid var(--border-highlight);
-  border-left: 1px solid var(--border-highlight);
-  border-bottom: 1px solid var(--border-shadow);
-  border-right: 1px solid var(--border-shadow);
-  padding: 6px 10px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--accent-gold);
-}
-
-.update-banner-actions {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
 .groupbox {
   border-top: 1px solid var(--border-highlight);
   border-left: 1px solid var(--border-highlight);

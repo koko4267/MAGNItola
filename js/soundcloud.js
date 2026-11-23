@@ -1,43 +1,45 @@
-async function getActiveClientId(forceRefresh = false, signal) {
-  signal?.throwIfAborted();
-  if (forceRefresh) {
-    localStorage.removeItem('magnitola_sc_client_id');
-  } else {
-    const cached = localStorage.getItem('magnitola_sc_client_id');
-    if (cached) return cached;
-    if (window.APP_CONFIG?.SOUNDCLOUD_CLIENT_ID) return window.APP_CONFIG.SOUNDCLOUD_CLIENT_ID;
+const clientIdStorageKey = 'magnitola_sc_client_id';
+
+async function refreshSoundCloudClientId(signal) {
+  const api = window.electronAPI;
+  if (!api?.refreshSoundCloudClientId) return null;
+
+  signal.throwIfAborted();
+  const cancel = () => api.cancelClientRefresh();
+  signal.addEventListener('abort', cancel, { once: true });
+  try {
+    const fresh = await api.refreshSoundCloudClientId();
+    signal.throwIfAborted();
+    if (fresh) localStorage.setItem(clientIdStorageKey, fresh);
+    return fresh;
+  } catch (err) {
+    signal.throwIfAborted();
+    console.warn('Failed to refresh SoundCloud client_id:', err);
+    return null;
+  } finally {
+    signal.removeEventListener('abort', cancel);
   }
-  const api = window.electronAPI || null;
-  if (api?.refreshSoundCloudClientId) {
-    const cancel = () => api.cancelClientRefresh();
-    signal?.addEventListener('abort', cancel, { once: true });
-    try {
-      const fresh = await api.refreshSoundCloudClientId();
-      signal?.throwIfAborted();
-      if (fresh) {
-        localStorage.setItem('magnitola_sc_client_id', fresh);
-        if (window.APP_CONFIG) window.APP_CONFIG.SOUNDCLOUD_CLIENT_ID = fresh;
-        return fresh;
-      }
-    } catch (err) {
-      signal?.throwIfAborted();
-      console.warn('Failed to refresh SoundCloud client_id:', err);
-    } finally {
-      signal?.removeEventListener('abort', cancel);
-    }
-  }
-  return window.APP_CONFIG?.SOUNDCLOUD_CLIENT_ID || '5lnU5PEpImc23JXFHBdq8E6QDd39I2uT';
+}
+
+async function requestSoundCloud(url, signal) {
+  signal.throwIfAborted();
+  const endpoint = new URL(url);
+  const clientId = localStorage.getItem(clientIdStorageKey) || window.APP_CONFIG.SOUNDCLOUD_CLIENT_ID;
+  if (!endpoint.searchParams.has('client_id')) endpoint.searchParams.set('client_id', clientId);
+  const response = await window.fetchWithRetry(endpoint.href, { signal });
+  if (response.status !== 401) return response;
+
+  endpoint.searchParams.set('client_id', (await refreshSoundCloudClientId(signal)) || clientId);
+  return window.fetchWithRetry(endpoint.href, { signal });
 }
 
 async function resolveSoundCloudUrl(url, signal) {
-  let clientId = await getActiveClientId(false, signal);
-  const request = (url, options) => window.fetchWithRetry(url, { ...options, signal });
   let cleanUrl = url.trim();
 
   const inputUrl = URL.parse(cleanUrl);
   if (inputUrl?.hostname === 'on.soundcloud.com') {
     try {
-      const resp = await request(cleanUrl, { method: 'GET', redirect: 'follow' });
+      const resp = await window.fetchWithRetry(cleanUrl, { redirect: 'follow', signal });
       if (resp.url && resp.url !== cleanUrl) {
         cleanUrl = resp.url;
       }
@@ -47,15 +49,8 @@ async function resolveSoundCloudUrl(url, signal) {
   }
 
   const resolveTarget = cleanUrl.replace(/\/likes\/?(\?.*)?$/i, '').replace(/\/+$/, '');
-  let resolveApi = `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(resolveTarget)}&client_id=${clientId}`;
-
-  let resp = await request(resolveApi);
-  if (resp.status === 401) {
-    console.warn('SoundCloud resolve returned 401, refreshing client_id...');
-    clientId = await getActiveClientId(true, signal);
-    resolveApi = `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(resolveTarget)}&client_id=${clientId}`;
-    resp = await request(resolveApi);
-  }
+  const resolveApi = `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(resolveTarget)}`;
+  const resp = await requestSoundCloud(resolveApi, signal);
 
   if (!resp.ok) {
     throw new Error(`SoundCloud resolve failed with status ${resp.status}`);
@@ -88,13 +83,8 @@ async function resolveSoundCloudUrl(url, signal) {
       for (let i = 0; i < missing.length; i += 50) {
         signal.throwIfAborted();
         const batch = missing.slice(i, i + 50);
-        let batchUrl = `https://api-v2.soundcloud.com/tracks?ids=${batch.join('%2C')}&client_id=${clientId}`;
-        let bResp = await request(batchUrl);
-        if (bResp.status === 401) {
-          clientId = await getActiveClientId(true, signal);
-          batchUrl = `https://api-v2.soundcloud.com/tracks?ids=${batch.join('%2C')}&client_id=${clientId}`;
-          bResp = await request(batchUrl);
-        }
+        const batchUrl = `https://api-v2.soundcloud.com/tracks?ids=${batch.join('%2C')}`;
+        const bResp = await requestSoundCloud(batchUrl, signal);
         if (!bResp.ok) throw new Error(`HTTP ${bResp.status}`);
         const bTracks = await bResp.json();
         if (!Array.isArray(bTracks)) throw new Error('Invalid playlist tracks response');
@@ -108,7 +98,7 @@ async function resolveSoundCloudUrl(url, signal) {
   } else if (kind === 'user') {
     subFolder = 'Likes';
     const userId = data.id;
-    let likesUrl = `https://api-v2.soundcloud.com/users/${userId}/likes?client_id=${clientId}&limit=50`;
+    let likesUrl = `https://api-v2.soundcloud.com/users/${userId}/likes?limit=50`;
     const seenPages = new Set();
 
     while (likesUrl && !signal.aborted) {
@@ -119,14 +109,7 @@ async function resolveSoundCloudUrl(url, signal) {
         page.searchParams.sort();
         if (seenPages.has(page.href)) throw new Error('Repeated likes page');
         seenPages.add(page.href);
-        let lResp = await request(likesUrl);
-        if (lResp.status === 401) {
-          clientId = await getActiveClientId(true, signal);
-          const retryUrl = new URL(likesUrl);
-          retryUrl.searchParams.set('client_id', clientId);
-          likesUrl = retryUrl.href;
-          lResp = await request(likesUrl);
-        }
+        const lResp = await requestSoundCloud(likesUrl, signal);
         if (!lResp.ok) throw new Error(`HTTP ${lResp.status}`);
         lData = await lResp.json();
         if (!Array.isArray(lData?.collection)) throw new Error('Invalid likes response');
@@ -152,7 +135,6 @@ async function resolveSoundCloudUrl(url, signal) {
       if (!lData.next_href) break;
       const nextPage = URL.parse(lData.next_href, likesUrl);
       if (nextPage?.origin !== 'https://api-v2.soundcloud.com') throw new Error('likesPageFailed');
-      if (!nextPage.searchParams.has('client_id')) nextPage.searchParams.set('client_id', clientId);
       likesUrl = nextPage.href;
     }
     signal.throwIfAborted();
@@ -168,4 +150,4 @@ async function resolveSoundCloudUrl(url, signal) {
 }
 
 window.resolveSoundCloudUrl = resolveSoundCloudUrl;
-window.getActiveClientId = getActiveClientId;
+window.requestSoundCloud = requestSoundCloud;

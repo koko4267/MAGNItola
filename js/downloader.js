@@ -4,7 +4,6 @@ let stage = null;
 let inputError = '';
 let downloadQueue = [];
 let completedCount = 0;
-window.isDownloading = false;
 
 // Render download queue
 function getQueueStatusInfo(status) {
@@ -208,6 +207,10 @@ function stopDownload() {
   activeJob?.abort();
 }
 
+function isDownloading() {
+  return activeJob !== null;
+}
+
 async function startDownloadFlow() {
   if (activeJob) return;
   const inputUrl = document.getElementById('inputUrl');
@@ -226,7 +229,6 @@ async function startDownloadFlow() {
     return;
   }
 
-  window.isDownloading = true;
   const controller = new AbortController();
   activeJob = controller;
   const { signal } = controller;
@@ -303,7 +305,6 @@ async function startDownloadFlow() {
     activeJob = null;
     setDownloadArtwork(null);
     renderSummary();
-    window.isDownloading = false;
     if (btnStartDownload) btnStartDownload.disabled = false;
     if (btnStopDownload) btnStopDownload.disabled = true;
     if (lblCurrentStatus) lblCurrentStatus.textContent = window.L.currentStatus;
@@ -315,6 +316,7 @@ async function startDownloadFlow() {
 Object.assign(window, {
   startDownloadFlow,
   stopDownload,
+  isDownloading,
   renderDownloadQueue,
   renderSummary,
   showInputError

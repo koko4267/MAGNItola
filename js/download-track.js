@@ -206,7 +206,6 @@ async function downloadHlsAudio(url, request, signal, report) {
 async function downloadTrack(track, index, total, subFolder, setMeta, downloadFolder, signal, report) {
   const api = window.electronAPI || null;
   const request = (url) => window.fetchWithRetry(url, { signal });
-  let clientId = await window.getActiveClientId(false, signal);
 
   const title = track.title || window.L?.untitled || 'Untitled';
   const artist = track.user
@@ -286,28 +285,22 @@ async function downloadTrack(track, index, total, subFolder, setMeta, downloadFo
     for (const selected of playable) {
       signal.throwIfAborted();
 
-      let streamInfoUrl = `${selected.url}?client_id=${clientId}`;
+      const streamInfoUrl = new URL(selected.url);
       if (track.track_authorization) {
-        streamInfoUrl += `&track_authorization=${encodeURIComponent(track.track_authorization)}`;
+        streamInfoUrl.searchParams.set('track_authorization', track.track_authorization);
       }
 
-      let streamResp = await request(streamInfoUrl);
-      if (streamResp.status === 401) {
-        clientId = await window.getActiveClientId(true, signal);
-        streamInfoUrl = `${selected.url}?client_id=${clientId}`;
-        if (track.track_authorization) {
-          streamInfoUrl += `&track_authorization=${encodeURIComponent(track.track_authorization)}`;
-        }
-        streamResp = await request(streamInfoUrl);
-      }
+      const streamResp = await window.requestSoundCloud(streamInfoUrl, signal);
       if (!streamResp.ok) continue;
 
       const streamJson = await streamResp.json();
       const audioCdnUrl = streamJson.url;
       if (!audioCdnUrl) continue;
 
-      if (selected.format?.protocol === 'progressive' || !audioCdnUrl.includes('.m3u8')) {
-        const isMp3 = selected.format?.protocol === 'progressive' && selected.format?.mime_type === 'audio/mpeg';
+      const protocol = selected.format?.protocol;
+      const isHls = protocol === 'hls' || (protocol !== 'progressive' && audioCdnUrl.includes('.m3u8'));
+      if (!isHls) {
+        const isMp3 = protocol === 'progressive' && selected.format?.mime_type === 'audio/mpeg';
         audioBuffer = await downloadProgressiveAudio(audioCdnUrl, request, signal, isMp3 ? 100 : 70, report);
       } else {
         audioBuffer = await downloadHlsAudio(audioCdnUrl, request, signal, report);
@@ -342,18 +335,17 @@ async function downloadTrack(track, index, total, subFolder, setMeta, downloadFo
       report({ stage: 'encoding', speed: window.L.encodingMp3Badge });
 
       const actx = new (window.AudioContext || window.webkitAudioContext)();
+      const cancelled = Promise.withResolvers();
+      const cancelDecode = () => cancelled.reject(signal.reason);
       try {
+        signal.throwIfAborted();
         const abCopy = audioBuffer.buffer.slice(
           audioBuffer.byteOffset,
           audioBuffer.byteOffset + audioBuffer.byteLength
         );
-        const decodedPcm = await actx.decodeAudioData(abCopy);
-
-        if (signal.aborted) {
-          report({ status: 'wait' });
-          return false;
-        }
-
+        const decoding = actx.decodeAudioData(abCopy);
+        signal.addEventListener('abort', cancelDecode, { once: true });
+        const decodedPcm = await Promise.race([decoding, cancelled.promise]);
         // Encode via Web Worker
         cleanMp3Audio = await encodeAudioBufferWithWorker(
           decodedPcm,
@@ -365,6 +357,7 @@ async function downloadTrack(track, index, total, subFolder, setMeta, downloadFo
           signal
         );
       } finally {
+        signal.removeEventListener('abort', cancelDecode);
         if (actx && actx.close) actx.close().catch(() => {});
       }
       report({ progress: 100 });

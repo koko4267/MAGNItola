@@ -146,8 +146,9 @@ async function saveTrackFile(directory, payload) {
       const temporaryPath = path.join(directory, randomUUID() + '.part');
       try {
         await fs.writeFile(temporaryPath, payload.buffer, { flag: 'wx' });
-        // Resolve the name again in case a file appeared while the track was being written.
-        target = await findTrackTarget(directory, track);
+        // Saves in this directory are serialized. Look up another name if this one became occupied.
+        const current = await inspectTarget(directory, target.fileName, track);
+        if (current.occupied) target = current.exists ? current : await findTrackTarget(directory, track);
         if (!target.exists) await fs.rename(temporaryPath, target.filePath);
       } finally {
         await fs.rm(temporaryPath, { force: true }).catch(() => {});

@@ -195,7 +195,7 @@ function setLanguage(lang) {
     window.updateSavePathDisplay();
   }
 
-  if (typeof window.isDownloading !== 'undefined' && !window.isDownloading && currentTrackTitle) {
+  if (!window.isDownloading() && currentTrackTitle) {
     currentTrackTitle.textContent = L.waitingInput;
   }
 

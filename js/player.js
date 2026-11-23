@@ -66,7 +66,7 @@ function updatePlayerButtonsState() {
 
   const hasTracks = libraryTracks.length > 0;
   if (btnPlayerPrev) btnPlayerPrev.disabled = !hasTracks;
-  if (btnPlayerPlay) btnPlayerPlay.disabled = !hasTracks;
+  if (btnPlayerPlay) btnPlayerPlay.disabled = !hasTracks && !currentPlayingTrack;
   if (btnPlayerNext) btnPlayerNext.disabled = !hasTracks;
 }
 
@@ -388,35 +388,22 @@ function getSeekRatioFromEvent(e) {
   return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
 }
 
-function previewSeekPosition(ratio) {
-  const playerSeekFill = document.getElementById('playerSeekFill');
-  const playerSeekInput = document.getElementById('playerSeekInput');
-  const playerCurrentTime = document.getElementById('playerCurrentTime');
-
+function updatePointerSeekPosition(ratio, commit = false) {
   const dur = audio.duration;
   const validDur = dur && Number.isFinite(dur) && dur > 0 ? dur : currentPlayingTrack?.duration || 0;
+  if (commit && validDur <= 0) return;
+
   const clampedRatio = Math.max(0, Math.min(1, ratio));
-  if (playerSeekFill) playerSeekFill.style.width = `${clampedRatio * 100}%`;
-  if (validDur > 0) {
-    const targetSec = clampedRatio * validDur;
-    if (playerSeekInput) playerSeekInput.value = targetSec;
-    if (playerCurrentTime) playerCurrentTime.textContent = window.formatTime(targetSec);
-  }
-}
-
-function applySeekPosition(ratio) {
   const playerSeekFill = document.getElementById('playerSeekFill');
+  if (playerSeekFill) playerSeekFill.style.width = `${clampedRatio * 100}%`;
+  if (validDur <= 0) return;
+  const targetSec = clampedRatio * validDur;
   const playerSeekInput = document.getElementById('playerSeekInput');
   const playerCurrentTime = document.getElementById('playerCurrentTime');
+  if (playerSeekInput) playerSeekInput.value = targetSec;
+  if (playerCurrentTime) playerCurrentTime.textContent = window.formatTime(targetSec);
 
-  const dur = audio.duration;
-  const validDur = dur && Number.isFinite(dur) && dur > 0 ? dur : currentPlayingTrack?.duration || 0;
-  if (validDur > 0) {
-    const clampedRatio = Math.max(0, Math.min(1, ratio));
-    const targetSec = clampedRatio * validDur;
-    if (playerSeekFill) playerSeekFill.style.width = `${clampedRatio * 100}%`;
-    if (playerSeekInput) playerSeekInput.value = targetSec;
-    if (playerCurrentTime) playerCurrentTime.textContent = window.formatTime(targetSec);
+  if (commit) {
     try {
       audio.currentTime = targetSec;
     } catch (err) {
@@ -512,13 +499,13 @@ function initPlayerListeners() {
         playerSeekWrapper.setPointerCapture(e.pointerId);
       } catch {}
       const ratio = getSeekRatioFromEvent(e);
-      previewSeekPosition(ratio);
+      updatePointerSeekPosition(ratio);
     });
 
     playerSeekWrapper.addEventListener('pointermove', (e) => {
       if (!isPointerDownOnSeek) return;
       const ratio = getSeekRatioFromEvent(e);
-      previewSeekPosition(ratio);
+      updatePointerSeekPosition(ratio);
     });
 
     const finishSeekPointer = (e) => {
@@ -526,7 +513,7 @@ function initPlayerListeners() {
       isPointerDownOnSeek = false;
       isDraggingSeek = false;
       const ratio = getSeekRatioFromEvent(e);
-      applySeekPosition(ratio);
+      updatePointerSeekPosition(ratio, true);
     };
 
     playerSeekWrapper.addEventListener('pointerup', finishSeekPointer);

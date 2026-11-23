@@ -34,7 +34,8 @@ async function resolveSoundCloudUrl(url, signal) {
   const request = (url, options) => window.fetchWithRetry(url, { ...options, signal });
   let cleanUrl = url.trim();
 
-  if (cleanUrl.includes('on.soundcloud.com')) {
+  const inputUrl = URL.parse(cleanUrl);
+  if (inputUrl?.hostname === 'on.soundcloud.com') {
     try {
       const resp = await request(cleanUrl, { method: 'GET', redirect: 'follow' });
       if (resp.url && resp.url !== cleanUrl) {
@@ -108,10 +109,16 @@ async function resolveSoundCloudUrl(url, signal) {
     subFolder = 'Likes';
     const userId = data.id;
     let likesUrl = `https://api-v2.soundcloud.com/users/${userId}/likes?client_id=${clientId}&limit=50`;
+    const seenPages = new Set();
 
     while (likesUrl && !signal.aborted) {
       let lData;
       try {
+        const page = new URL(likesUrl);
+        page.searchParams.delete('client_id');
+        page.searchParams.sort();
+        if (seenPages.has(page.href)) throw new Error('Repeated likes page');
+        seenPages.add(page.href);
         let lResp = await request(likesUrl);
         if (lResp.status === 401) {
           clientId = await getActiveClientId(true, signal);
@@ -142,14 +149,11 @@ async function resolveSoundCloudUrl(url, signal) {
         }
       }
 
-      if (lData.next_href) {
-        likesUrl = lData.next_href;
-        if (!likesUrl.includes('client_id=')) {
-          likesUrl += `&client_id=${clientId}`;
-        }
-      } else {
-        likesUrl = null;
-      }
+      if (!lData.next_href) break;
+      const nextPage = URL.parse(lData.next_href, likesUrl);
+      if (nextPage?.origin !== 'https://api-v2.soundcloud.com') throw new Error('likesPageFailed');
+      if (!nextPage.searchParams.has('client_id')) nextPage.searchParams.set('client_id', clientId);
+      likesUrl = nextPage.href;
     }
     signal.throwIfAborted();
   } else {

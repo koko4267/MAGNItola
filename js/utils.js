@@ -69,6 +69,7 @@ async function fetchWithRetry(
       if (resp.ok) return resp;
       if (resp.status === 429 || resp.status >= 500) {
         if (attempt < retries) {
+          await resp.body?.cancel().catch(() => {});
           const jitter = Math.floor(Math.random() * maxJitter);
           const delay = baseDelayMs * Math.pow(2, attempt - 1) + jitter;
           await retryDelay(delay, options.signal);

@@ -28,18 +28,23 @@ function loadCover(path) {
 }
 
 const artworkCache = new Map();
+let cachedArtworkChars = 0;
 
 function setArtworkCache(key, value) {
   const max = window.APP_CONFIG?.ARTWORK_CACHE_MAX || 200;
+  const maxChars = window.APP_CONFIG?.ARTWORK_CACHE_MAX_CHARS || 32 * 1024 * 1024;
   if (artworkCache.has(key)) {
+    cachedArtworkChars -= artworkCache.get(key).length;
     artworkCache.delete(key);
-  } else if (artworkCache.size >= max) {
+  }
+  if (value.length > maxChars) return;
+  while (artworkCache.size >= max || cachedArtworkChars + value.length > maxChars) {
     const oldestKey = artworkCache.keys().next().value;
-    if (oldestKey !== undefined) {
-      artworkCache.delete(oldestKey);
-    }
+    cachedArtworkChars -= artworkCache.get(oldestKey).length;
+    artworkCache.delete(oldestKey);
   }
   artworkCache.set(key, value);
+  cachedArtworkChars += value.length;
 }
 
 function getArtworkCache(key) {

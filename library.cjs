@@ -125,9 +125,7 @@ async function readTrackCover(filePath) {
   return null;
 }
 
-async function collectMediaFiles(dir, supported, currentDepth = 0, maxDepth = 4) {
-  if (currentDepth > maxDepth) return [];
-  const results = [];
+async function collectMediaFiles(dir, supported, results, depth = 0) {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
@@ -136,7 +134,7 @@ async function collectMediaFiles(dir, supported, currentDepth = 0, maxDepth = 4)
         if (supported.has(ext)) {
           results.push(path.join(dir, entry.name));
         }
-      } else if (entry.isDirectory()) {
+      } else if (depth < 4 && entry.isDirectory()) {
         const dirName = entry.name.toLowerCase();
         if (
           dirName.startsWith('.') ||
@@ -146,12 +144,10 @@ async function collectMediaFiles(dir, supported, currentDepth = 0, maxDepth = 4)
         ) {
           continue;
         }
-        const subFiles = await collectMediaFiles(path.join(dir, entry.name), supported, currentDepth + 1, maxDepth);
-        results.push(...subFiles);
+        await collectMediaFiles(path.join(dir, entry.name), supported, results, depth + 1);
       }
     }
   } catch {}
-  return results;
 }
 
 async function readMetadata(fullPath, buffer) {
@@ -183,7 +179,8 @@ async function readMetadata(fullPath, buffer) {
 
 async function scanLibrary(folder) {
   const supported = new Set(['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.opus']);
-  const files = await collectMediaFiles(folder, supported);
+  const files = [];
+  await collectMediaFiles(folder, supported, files);
   const tracks = new Array(files.length);
   let next = 0;
   async function worker() {

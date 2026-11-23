@@ -184,18 +184,30 @@ test('verified MP3 frames pass through unchanged after replacing the original ID
   assert.deepEqual(saved.buffer.subarray(10 + tagSize), frames);
 });
 
-test('HLS keeps the initialization segment and playlist order when segments finish out of order', async () => {
+test('HLS follows redirected playlist URLs and keeps segments in playlist order', async () => {
   const first = Promise.withResolvers();
   const second = Promise.withResolvers();
   const received = [];
   const app = renderer(['config', 'download-track']);
   const url = 'https://fixture/master.m3u8';
   const request = async (uri) => {
-    if (uri === url) return new Response('#EXT-X-STREAM-INF:BANDWIDTH=64000\nmedia/list.m3u8');
-    if (uri.endsWith('/media/list.m3u8')) return new Response('#EXT-X-MAP:URI="init.mp4"\nfirst.m4s\nsecond.m4s');
-    if (uri.endsWith('/media/init.mp4')) return new Response(Uint8Array.of(1));
-    if (uri.endsWith('/media/first.m4s')) return first.promise;
-    if (uri.endsWith('/media/second.m4s')) return second.promise;
+    if (uri === url) {
+      return {
+        ok: true,
+        url: 'https://cdn/master.m3u8',
+        text: async () => '#EXT-X-STREAM-INF:BANDWIDTH=64000\nmedia/list.m3u8'
+      };
+    }
+    if (uri === 'https://cdn/media/list.m3u8') {
+      return {
+        ok: true,
+        url: 'https://cdn/segments/list.m3u8',
+        text: async () => '#EXT-X-MAP:URI="init.mp4"\nfirst.m4s\nsecond.m4s'
+      };
+    }
+    if (uri === 'https://cdn/segments/init.mp4') return new Response(Uint8Array.of(1));
+    if (uri === 'https://cdn/segments/first.m4s') return first.promise;
+    if (uri === 'https://cdn/segments/second.m4s') return second.promise;
     assert.fail('Unexpected HLS URL ' + uri);
   };
   const download = app.downloadHlsAudio(url, request, new AbortController().signal, (update) => received.push(update));
@@ -274,6 +286,25 @@ test('a 503 from the second likes page prevents downloading a partial queue and 
   assert.equal(app.document.getElementById('inputError').textContent, app.L.likesPageFailed);
   assert.ok(app.L.likesPageFailed);
   assert.equal(app.isDownloading, false);
+});
+
+test('likes pagination stops on a repeated page even if its query parameters are reordered', async () => {
+  let requests = 0;
+  const app = renderer(['config', 'utils', 'soundcloud'], {
+    fetch: async (url) => {
+      requests++;
+      if (url.includes('/resolve?')) return Response.json({ kind: 'user', id: 1 });
+      return Response.json({
+        collection: [{ track: trackFixture() }],
+        next_href: '/users/1/likes?limit=50&client_id=different'
+      });
+    }
+  });
+  await assert.rejects(
+    app.resolveSoundCloudUrl('https://soundcloud.com/artist/likes', new AbortController().signal),
+    /likesPageFailed/
+  );
+  assert.equal(requests, 2);
 });
 
 test('download artwork returns to the logo when the queue finishes', async () => {
@@ -526,6 +557,20 @@ test('tracks saved during a scan retain only metadata after their artwork is evi
   assert.equal(app.getArtworkCache('A/second'), 'second');
   assert.equal(await app.loadCover('A/first'), 'from disk');
   assert.equal(app.getArtworkCache('A/second'), null);
+});
+
+test('the artwork cache evicts by total size and keeps recently used covers', () => {
+  const app = renderer(['player'], { APP_CONFIG: { ARTWORK_CACHE_MAX_CHARS: 10 } });
+  app.setArtworkCache('recent', 'abcd');
+  app.setArtworkCache('old', 'efgh');
+  app.getArtworkCache('recent');
+  app.setArtworkCache('new', 'ijk');
+  assert.equal(app.getArtworkCache('recent'), 'abcd');
+  assert.equal(app.getArtworkCache('old'), null);
+  assert.equal(app.getArtworkCache('new'), 'ijk');
+  app.setArtworkCache('recent', 'x'.repeat(11));
+  assert.equal(app.getArtworkCache('recent'), null);
+  assert.equal(app.getArtworkCache('new'), 'ijk');
 });
 
 test('concurrent saves preserve distinct SoundCloud tracks with the same filename', async (t) => {

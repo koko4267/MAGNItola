@@ -134,6 +134,7 @@ async function downloadProgressiveAudio(url, request, signal, progressScale, rep
 async function downloadHlsAudio(url, request, signal, report) {
   const response = await request(url);
   if (!response.ok) return null;
+  url = response.url || url;
   let playlist = await response.text();
   if (playlist.includes('#EXT-X-STREAM-INF')) {
     const lines = playlist.split('\n').map((line) => line.trim());
@@ -144,6 +145,7 @@ async function downloadHlsAudio(url, request, signal, report) {
     url = new URL(lines[variantIndex + 1], url).href;
     const variant = await request(url);
     if (!variant.ok) return null;
+    url = variant.url || url;
     playlist = await variant.text();
   }
 

@@ -5,6 +5,13 @@ const { scanLibrary, readTrackCover } = require('./library.cjs');
 const { checkTrackFile, saveTrackFile } = require('./track-files.cjs');
 const fs = require('fs');
 const { Readable } = require('stream');
+const { pathToFileURL } = require('node:url');
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+  process.exit(0);
+}
 
 const tempUserData = path.join(os.tmpdir(), `magnitola-session-${process.pid}`);
 try {
@@ -16,22 +23,20 @@ async function cleanStaleTempDirs() {
   try {
     const tmp = os.tmpdir();
     const entries = await fs.promises.readdir(tmp);
-    const prefix = 'magnitola-session-';
-    const currentName = `magnitola-session-${process.pid}`;
     for (const name of entries) {
-      if (name.startsWith(prefix) && name !== currentName) {
+      const match = /^magnitola-session-([1-9]\d*)$/.exec(name);
+      const pid = match && Number(match[1]);
+      if (pid && pid <= 0x7fffffff && pid !== process.pid) {
         try {
-          await fs.promises.rm(path.join(tmp, name), { recursive: true, force: true });
-        } catch {}
+          process.kill(pid, 0);
+        } catch (error) {
+          if (error.code === 'ESRCH') {
+            await fs.promises.rm(path.join(tmp, name), { recursive: true, force: true }).catch(() => {});
+          }
+        }
       }
     }
   } catch {}
-}
-
-const gotSingleInstanceLock = app.requestSingleInstanceLock();
-if (!gotSingleInstanceLock) {
-  app.quit();
-  process.exit(0);
 }
 
 app.commandLine.appendSwitch('disable-http-cache');
@@ -67,9 +72,7 @@ protocol.registerSchemesAsPrivileged([
     privileges: {
       standard: true,
       secure: true,
-      stream: true,
-      supportFetchAPI: true,
-      corsEnabled: true
+      stream: true
     }
   }
 ]);
@@ -77,45 +80,64 @@ protocol.registerSchemesAsPrivileged([
 app.setAppUserModelId('com.magnitola.downloader');
 
 let mainWindow = null;
+const appPageUrl = pathToFileURL(path.join(__dirname, 'index.html')).href;
+const synclineUrl = 'https://sync-line.pages.dev/';
+const selectedDirectories = new Map();
+const mediaFiles = new Map();
+
+async function authorizeDirectory(directory) {
+  const resolved = path.resolve(directory);
+  const canonical = await fs.promises.realpath(resolved).catch((error) => {
+    if (error.code !== 'ENOENT') throw error;
+    return resolved;
+  });
+  selectedDirectories.set(resolved, canonical);
+}
+
+function isWithinDirectory(directory, filePath) {
+  const relative = path.relative(directory, filePath);
+  return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+async function getAuthorizedMediaPath(filePath) {
+  const root = mediaFiles.get(filePath);
+  if (!root) return null;
+  const canonical = await fs.promises.realpath(filePath);
+  return isWithinDirectory(root, canonical) ? canonical : null;
+}
 
 function isTrustedSender(event) {
   if (!mainWindow || !event.senderFrame) return false;
-  return event.senderFrame === mainWindow.webContents.mainFrame;
+  return event.senderFrame === mainWindow.webContents.mainFrame && event.senderFrame.url === appPageUrl;
 }
 
-function resolveTargetDirectory(folder, subFolder) {
-  let resolved =
-    typeof folder === 'string' && folder.trim() && !folder.includes('\0')
-      ? path.resolve(folder)
-      : app.getPath('downloads');
+async function resolveTargetDirectory(folder, subFolder) {
+  const resolved = path.resolve(folder || app.getPath('downloads'));
+  const root = selectedDirectories.get(resolved);
+  if (!root) throw new Error('Unauthorized download folder');
 
+  let target = root;
   if (typeof subFolder === 'string' && subFolder.trim() && !subFolder.includes('\0')) {
     const safe = path.basename(subFolder.trim().replace(/[<>:"/\\|?*]+/g, '_'));
     if (safe && safe !== '.' && safe !== '..') {
-      resolved = path.join(resolved, safe);
+      target = path.join(root, safe);
     }
   }
-  return resolved;
+  const canonical = await fs.promises.realpath(target).catch((error) => {
+    if (error.code !== 'ENOENT') throw error;
+    return target;
+  });
+  if (!isWithinDirectory(root, canonical)) throw new Error('Unauthorized download folder');
+  return { directory: canonical, root, resolved };
 }
 
 function parseMediaPath(requestUrl) {
   try {
     const url = new URL(requestUrl);
-    if (url.protocol !== `${MEDIA_SCHEME}:`) return null;
-
-    let rawPath = decodeURIComponent(url.pathname);
-    if (rawPath.startsWith('/local/')) {
-      rawPath = rawPath.slice(7);
-    } else if (rawPath.startsWith('/')) {
-      rawPath = rawPath.slice(1);
-    }
-
-    if (/^\/[a-zA-Z]:/.test(rawPath)) {
-      rawPath = rawPath.slice(1);
-    }
-
-    if (rawPath.includes('\0')) return null;
-    return path.resolve(path.normalize(rawPath));
+    if (url.protocol !== `${MEDIA_SCHEME}:` || url.host !== 'local') return null;
+    if (url.username || url.password || url.search || url.hash) return null;
+    const filePath = decodeURIComponent(url.pathname.slice(1));
+    return path.isAbsolute(filePath) && !filePath.includes('\0') ? filePath : null;
   } catch {
     return null;
   }
@@ -123,19 +145,18 @@ function parseMediaPath(requestUrl) {
 
 async function handleMediaRequest(requestUrl, rangeHeader) {
   try {
-    const resolvedPath = parseMediaPath(requestUrl);
-    if (!resolvedPath) {
+    const filePath = parseMediaPath(requestUrl);
+    if (!filePath) {
       return new Response('Malformed request URL', { status: 400 });
     }
 
-    const ext = path.extname(resolvedPath).toLowerCase();
+    const resolvedPath = await getAuthorizedMediaPath(filePath);
+    if (!resolvedPath) return new Response('Forbidden file', { status: 403 });
+
+    const ext = path.extname(filePath).toLowerCase();
     const mimeType = ALLOWED_MEDIA_MIMES[ext];
     if (!mimeType) {
       return new Response('Forbidden file type', { status: 403 });
-    }
-
-    if (!fs.existsSync(resolvedPath)) {
-      return new Response('File not found', { status: 404 });
     }
 
     const stat = await fs.promises.stat(resolvedPath);
@@ -207,6 +228,7 @@ async function handleMediaRequest(requestUrl, rangeHeader) {
       });
     }
   } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return new Response('File not found', { status: 404 });
     console.error('[mediaProtocol]', err);
     return new Response('Internal Server Error', { status: 500 });
   }
@@ -263,14 +285,15 @@ async function findSoundCloudClientId(signal) {
     });
     if (!resp.ok) return null;
     const html = await resp.text();
-    const scriptRegex = /https:\/\/[^"'\s]+sndcdn\.com\/[^"'\s]+\.js/g;
-    const scripts = Array.from(new Set(html.match(scriptRegex) || []));
-    const reversed = scripts.reverse().slice(0, 5);
+    const scriptRegex = /https:\/\/(?:[a-z\d-]+\.)*sndcdn\.com\/[^"'\s]+\.js/gi;
+    const scripts = [...new Set(html.match(scriptRegex))].slice(-5).reverse();
 
-    for (const scriptUrl of reversed) {
+    for (const scriptUrl of scripts) {
       try {
+        signal.throwIfAborted();
         const sResp = await net.fetch(scriptUrl, {
           signal,
+          redirect: 'error',
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
         });
         if (!sResp.ok) continue;
@@ -279,10 +302,12 @@ async function findSoundCloudClientId(signal) {
         if (m && m[1]) {
           return m[1];
         }
-      } catch {}
+      } catch {
+        if (signal.aborted) return null;
+      }
     }
   } catch (err) {
-    console.warn('[findSoundCloudClientId]', err);
+    if (!signal.aborted) console.warn('[findSoundCloudClientId]', err);
   }
   return null;
 }
@@ -299,7 +324,9 @@ function registerIpcHandlers() {
       properties: ['openDirectory', 'createDirectory']
     });
     if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
-      return result.filePaths[0];
+      const directory = result.filePaths[0];
+      await authorizeDirectory(directory);
+      return directory;
     }
     return null;
   });
@@ -313,9 +340,9 @@ function registerIpcHandlers() {
     if (!isTrustedSender(event) || !payload || typeof payload !== 'object') {
       return { exists: false };
     }
-    const resolvedFolder = resolveTargetDirectory(payload.folder, payload.subFolder);
     try {
-      return await checkTrackFile(resolvedFolder, payload);
+      const { directory } = await resolveTargetDirectory(payload.folder, payload.subFolder);
+      return await checkTrackFile(directory, payload);
     } catch (err) {
       return { exists: false, error: err.message };
     }
@@ -325,9 +352,12 @@ function registerIpcHandlers() {
     if (!isTrustedSender(event) || !payload || typeof payload !== 'object') {
       return { success: false, error: 'Unauthorized or invalid payload' };
     }
-    const resolvedFolder = resolveTargetDirectory(payload.folder, payload.subFolder);
     try {
-      return await saveTrackFile(resolvedFolder, payload);
+      const { directory, root, resolved } = await resolveTargetDirectory(payload.folder, payload.subFolder);
+      const result = await saveTrackFile(directory, payload);
+      const filePath = path.join(resolved, path.relative(root, result.filePath));
+      mediaFiles.set(filePath, root);
+      return { ...result, filePath };
     } catch (err) {
       console.error('[save-track]', err);
       return { success: false, error: err.message };
@@ -339,8 +369,13 @@ function registerIpcHandlers() {
     if (typeof folder !== 'string' || !folder.trim() || folder.includes('\0')) return [];
 
     const resolvedFolder = path.resolve(folder);
+    const root = selectedDirectories.get(resolvedFolder);
+    if (!root) return [];
     try {
-      return await scanLibrary(resolvedFolder);
+      if ((await fs.promises.realpath(resolvedFolder)) !== root) return [];
+      const tracks = await scanLibrary(resolvedFolder);
+      for (const track of tracks) mediaFiles.set(track.filePath, root);
+      return tracks;
     } catch (err) {
       console.error('[scan-library]', err);
       return [];
@@ -350,7 +385,12 @@ function registerIpcHandlers() {
   ipcMain.handle('read-track-cover', async (event, filePath) => {
     if (!isTrustedSender(event)) return null;
     if (typeof filePath !== 'string' || !filePath.trim() || filePath.includes('\0')) return null;
-    return readTrackCover(filePath);
+    try {
+      const authorizedPath = await getAuthorizedMediaPath(filePath);
+      return authorizedPath ? await readTrackCover(authorizedPath) : null;
+    } catch {
+      return null;
+    }
   });
 
   let refreshController;
@@ -400,24 +440,11 @@ function createWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol === 'https:') {
-        shell.openExternal(parsed.href);
-      }
-    } catch {}
+    if (url === synclineUrl) shell.openExternal(synclineUrl).catch(console.error);
     return { action: 'deny' };
   });
 
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    event.preventDefault();
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol === 'https:') {
-        shell.openExternal(parsed.href);
-      }
-    } catch {}
-  });
+  mainWindow.webContents.on('will-frame-navigate', (event) => event.preventDefault());
 
   mainWindow.webContents.on('will-attach-webview', (event) => {
     event.preventDefault();
@@ -439,18 +466,18 @@ function createWindow() {
     setTimeout(cleanStaleTempDirs, 1000);
   });
 
-  mainWindow.loadFile('index.html');
+  mainWindow.loadURL(appPageUrl);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await authorizeDirectory(app.getPath('downloads')).catch(console.error);
   const mediaHandler = async (request) => {
     return handleMediaRequest(request.url, request.headers.get('range'));
   };
-  protocol.handle(MEDIA_SCHEME, mediaHandler);
   session.fromPartition(IN_MEMORY_PARTITION).protocol.handle(MEDIA_SCHEME, mediaHandler);
 
   configureAppSession();

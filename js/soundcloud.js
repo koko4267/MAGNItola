@@ -33,22 +33,37 @@ async function requestSoundCloud(url, signal) {
   return window.fetchWithRetry(endpoint.href, { signal });
 }
 
-async function resolveSoundCloudUrl(url, signal) {
-  let cleanUrl = url.trim();
+function parseSoundCloudLink(value) {
+  const url = URL.parse(value);
+  if (
+    !url ||
+    !['http:', 'https:'].includes(url.protocol) ||
+    !['soundcloud.com', 'www.soundcloud.com', 'm.soundcloud.com', 'on.soundcloud.com'].includes(url.hostname) ||
+    url.username ||
+    url.password ||
+    url.port
+  ) {
+    throw new Error('invalidUrlError');
+  }
+  url.protocol = 'https:';
+  return url;
+}
 
-  const inputUrl = URL.parse(cleanUrl);
-  if (inputUrl?.hostname === 'on.soundcloud.com') {
+async function resolveSoundCloudUrl(url, signal) {
+  let target = parseSoundCloudLink(url.trim());
+  if (target.hostname === 'on.soundcloud.com') {
+    let response;
     try {
-      const resp = await window.fetchWithRetry(cleanUrl, { redirect: 'follow', signal });
-      if (resp.url && resp.url !== cleanUrl) {
-        cleanUrl = resp.url;
-      }
+      response = await window.fetchWithRetry(target.href, { redirect: 'follow', signal });
     } catch (e) {
+      signal.throwIfAborted();
       console.warn('Could not expand shortlink:', e);
     }
+    if (response?.url) target = parseSoundCloudLink(response.url);
   }
 
-  const resolveTarget = cleanUrl.replace(/\/likes\/?(\?.*)?$/i, '').replace(/\/+$/, '');
+  target.pathname = target.pathname.replace(/\/likes\/?$/i, '').replace(/\/+$/, '');
+  const resolveTarget = target.href;
   const resolveApi = `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(resolveTarget)}`;
   const resp = await requestSoundCloud(resolveApi, signal);
 

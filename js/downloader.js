@@ -141,7 +141,7 @@ function renderReason(row, status, reasonText) {
   if (status !== 'fail') return;
   const reason = document.createElement('span');
   reason.className = 'queue-reason';
-  reason.textContent = reasonText || window.L.noStream;
+  reason.textContent = Object.hasOwn(window.L, reasonText) ? window.L[reasonText] : reasonText || window.L.noStream;
   row.appendChild(reason);
 }
 

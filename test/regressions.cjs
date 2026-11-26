@@ -115,7 +115,10 @@ test('a refreshed SoundCloud client ID is reused by later playlist requests', as
       return Response.json([track]);
     }
   });
-  const result = await app.resolveSoundCloudUrl('https://soundcloud.com/artist/sets/test', new AbortController().signal);
+  const result = await app.resolveSoundCloudUrl(
+    'https://soundcloud.com/artist/sets/test',
+    new AbortController().signal
+  );
   assert.equal(result.tracks[0].id, track.id);
   assert.deepEqual(requests, [
     ['/resolve', app.APP_CONFIG.SOUNDCLOUD_CLIENT_ID],
@@ -325,9 +328,21 @@ test('AAC with and without ID3 is decoded and encoded to MP3 at 192 kbps', async
       },
       addTrackToPlayer() {}
     });
+    let downloaded;
+    const join = app.joinAudioChunks;
+    app.joinAudioChunks = (...args) => {
+      downloaded = join(...args);
+      if (input !== adts) {
+        const padded = Uint8Array.from([0xcc, ...downloaded, 0xdd]);
+        downloaded = padded.subarray(1, -1);
+      }
+      return downloaded;
+    };
     const track = trackFixture('audio/aac');
     assert.equal(await app.downloadTrack(track, 1, 1, null, {}, 'out', new AbortController().signal, () => {}), true);
     assert.deepEqual(decoded, input);
+    if (input === adts) assert.equal(decoded.buffer, downloaded.buffer);
+    else assert.notEqual(decoded.buffer, downloaded.buffer);
     assert.equal(encodingOptions.bitrate, 192);
     assert.deepEqual(saved.buffer.subarray(-encoded.length), encoded);
   }
@@ -697,4 +712,159 @@ test('saving chooses another name if the intended file appears while writing', a
   assert.equal(result.fileName, 'Artist - Test [42].mp3');
   assert.equal(fs.readFileSync(originalPath, 'utf8'), 'another file');
   assert.ok(fs.readdirSync(directory).every((name) => name.endsWith('.mp3')));
+});
+
+test('invalid links stay local, and the queue accepts a corrected private link', async () => {
+  for (const lang of ['en', 'ru']) {
+    const targets = [];
+    const app = renderer(['locales', 'config', 'utils', 'soundcloud', 'downloader'], {
+      localStorage: { getItem: (key) => (key === 'magnitola_lang' ? lang : null) },
+      fetch: async (url) => {
+        targets.push(new URL(url).searchParams.get('url'));
+        return Response.json({ kind: 'playlist', tracks: [] });
+      }
+    });
+    const input = app.document.getElementById('inputUrl');
+    for (input.value of [
+      'pasted text',
+      'https://example.invalid/file?token=synthetic',
+      'https://soundcloud.com.example.invalid/a',
+      'https://soundcloud.com@example.invalid/a',
+      'ftp://soundcloud.com/a'
+    ]) {
+      await app.startDownloadFlow();
+      assert.equal(app.document.getElementById('inputError').textContent, app.LOCALES[lang].invalidUrlError);
+    }
+    assert.deepEqual(targets, []);
+    input.value = 'http://m.soundcloud.com/a/music/s-private?secret_token=test%2F';
+    await app.startDownloadFlow();
+    assert.deepEqual(targets, [input.value.replace('http:', 'https:')]);
+  }
+});
+
+test('short links validate the expanded URL before resolve', async () => {
+  const short = 'https://on.soundcloud.com/test';
+  let destination = 'https://example.invalid/file';
+  const calls = [];
+  const app = renderer(['config', 'utils', 'soundcloud'], {
+    fetch: async (url) => {
+      calls.push(url);
+      if (url === short) return { ok: true, url: destination };
+      return Response.json({ kind: 'track' });
+    }
+  });
+  const signal = new AbortController().signal;
+  await assert.rejects(app.resolveSoundCloudUrl(short, signal), /invalidUrlError/);
+  assert.deepEqual(calls, [short]);
+  destination = 'https://www.soundcloud.com/artist/likes/?x=1';
+  await app.resolveSoundCloudUrl(short, signal);
+  assert.equal(new URL(calls[2]).searchParams.get('url'), 'https://www.soundcloud.com/artist?x=1');
+});
+
+test('stream fallback preserves retries, cancellation and the final failure reason', async () => {
+  for (const scenario of ['404', 'transport', 'empty', 'abort', 'exhausted', 'range', 'map-only']) {
+    const track = trackFixture();
+    const first = track.media.transcodings[0];
+    const second = { ...first, url: 'https://fixture/second' };
+    const ranged = scenario === 'range' || scenario === 'map-only';
+    if (ranged) {
+      first.format = { protocol: 'hls' };
+      second.format = { protocol: 'progressive' };
+    }
+    if (scenario !== 'map-only') track.media.transcodings.push(second);
+    const controller = new AbortController();
+    const updates = [];
+    const counts = [0, 0, 0];
+    const unexpected = [];
+    const app = mockAudioDownload(null, {
+      L: { hlsByteRangeUnsupported: 'unsupported byte ranges' },
+      fetch: async (url) => {
+        const pathname = new URL(url).pathname;
+        if (pathname === '/stream' || pathname === '/second') {
+          return Response.json({ url: 'https://fixture' + pathname + '/audio' });
+        }
+        if (pathname === '/stream/audio') {
+          counts[0]++;
+          if (scenario === 'abort') controller.abort();
+          if (scenario === '404') return new Response(null, { status: 404 });
+          if (scenario === 'empty') return new Response(new Uint8Array());
+          if (ranged) return new Response('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\n/variant');
+          throw new Error('transport failed');
+        }
+        if (pathname === '/variant') {
+          const tag = scenario === 'range' ? '#EXT-X-BYTERANGE:2@0' : '#EXT-X-MAP:URI="init",BYTERANGE="2@0"';
+          const segments = scenario === 'range' ? 'segment\n#EXT-X-BYTERANGE:2@2\nsegment' : 'segment';
+          return new Response(`#EXTM3U\n${tag}\n${segments}`);
+        }
+        if (pathname === '/second/audio') {
+          counts[1]++;
+          return scenario === 'exhausted' ? new Response(null, { status: 410 }) : new Response(mp3Frames());
+        }
+        unexpected.push(pathname);
+        return new Response(null, { status: 404 });
+      },
+      electronAPI: {
+        saveTrack: async ({ buffer }) => {
+          assert.deepEqual(buffer.subarray(-834), mp3Frames());
+          counts[2]++;
+          return { success: true, filePath: 'out/test.mp3' };
+        }
+      },
+      addTrackToPlayer() {}
+    });
+    app.APP_CONFIG.RETRY_BASE_DELAY_MS = 1;
+    app.APP_CONFIG.RETRY_JITTER_MS = 1;
+    const result = app.downloadTrack(track, 1, 1, null, {}, 'out', controller.signal, (update) => updates.push(update));
+    if (scenario === 'abort') await assert.rejects(result, { name: 'AbortError' });
+    else if (scenario === 'exhausted' || scenario === 'map-only') {
+      assert.equal(await result, false);
+      const failures = updates.filter((update) => update.status === 'fail');
+      assert.deepEqual(
+        failures.map((update) => update.reason),
+        [ranged ? 'hlsByteRangeUnsupported' : 'HTTP 410']
+      );
+    } else assert.equal(await result, true);
+    const expected = {
+      404: [1, 1, 1],
+      transport: [3, 1, 1],
+      empty: [1, 1, 1],
+      abort: [1, 0, 0],
+      exhausted: [3, 1, 0],
+      range: [1, 1, 1],
+      'map-only': [1, 0, 0]
+    };
+    assert.deepEqual(counts, expected[scenario], scenario);
+    assert.deepEqual(unexpected, []);
+  }
+});
+
+test('a ranged HLS rendition falls back within the same master before reading media', async () => {
+  const app = renderer(['config', 'download-track']);
+  const requests = [];
+  const bodies = {
+    '/master': '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2\nranged\n#EXT-X-STREAM-INF:BANDWIDTH=1\nplain',
+    '/ranged': '#EXTM3U\n#EXT-X-MAP:BYTERANGE="2@0",URI="init"\nskip',
+    '/plain': '#EXTM3U\n#EXT-X-MAP:URI="init,BYTERANGE=fake"\nsound',
+    '/init,BYTERANGE=fake': Uint8Array.of(1, 2),
+    '/sound': Uint8Array.of(3, 4)
+  };
+  const request = async (url) => {
+    const name = new URL(url).pathname;
+    requests.push(name);
+    assert.ok(Object.hasOwn(bodies, name));
+    return new Response(bodies[name]);
+  };
+  const audio = await app.downloadHlsAudio('https://fixture/master', request, new AbortController().signal, () => {});
+  assert.deepEqual(audio, Uint8Array.of(1, 2, 3, 4));
+  assert.deepEqual(requests, Object.keys(bodies));
+});
+
+test('a stored HLS range error renders in the current queue language', () => {
+  const app = renderer(['locales', 'downloader']);
+  for (const lang of ['ru', 'en']) {
+    app.L = app.LOCALES[lang];
+    const row = app.document.createElement('div');
+    app.renderReason(row, 'fail', 'hlsByteRangeUnsupported');
+    assert.equal(row.children[0].textContent, app.LOCALES[lang].hlsByteRangeUnsupported);
+  }
 });

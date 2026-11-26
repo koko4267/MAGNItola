@@ -1,6 +1,6 @@
 {
   "name": "magnitola",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Music & Metadata Downloader and Player with ID3v2.3 tagging",
   "main": "main.js",
   "author": "MAGNItola",
@@ -67,6 +67,9 @@
       "artifactName": "MAGNItola-Setup-${version}.${ext}",
       "uninstallDisplayName": "MAGNItola"
     },
+    "extraResources": [
+      "licenses/lamejs"
+    ],
     "files": [
       "index.html",
       "main.js",

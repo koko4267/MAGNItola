@@ -1,0 +1,14 @@
+MAGNItola uses LAME for MP3 encoding through lamejs 1.2.1 by Alex Zhukov.
+LAME project: https://lame.sourceforge.io/
+lamejs project: https://github.com/zhuker/lamejs
+Exact upstream source distribution (including src/js and lame.min.js):
+https://registry.npmjs.org/lamejs/-/lamejs-1.2.1.tgz
+
+The npm package declares LGPL-3.0. This directory contains the GNU Lesser
+General Public License v3 and the GNU General Public License v3 it incorporates.
+Upstream-LICENSE.txt is the package author's notice. The upstream source tree
+also includes the original Library GPL v2 and the Java port's notice, reproduced
+as LAME-COPYING.txt and Java-LICENSE.txt.
+
+MAGNItola appends JavaScript exports for window, global and module.exports to
+the upstream lame.min.js. The encoder implementation is unchanged.

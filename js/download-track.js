@@ -106,7 +106,8 @@ function reportAudioProgress(report, bytes, startTime, progress, totalBytes) {
 
 async function downloadProgressiveAudio(url, request, signal, progressScale, report) {
   const response = await request(url);
-  if (!response.ok || !response.body) return null;
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.body) return null;
 
   const totalBytes = Number(response.headers.get('Content-Length'));
   const reader = response.body.getReader();
@@ -133,22 +134,41 @@ async function downloadProgressiveAudio(url, request, signal, progressScale, rep
 
 async function downloadHlsAudio(url, request, signal, report) {
   const response = await request(url);
-  if (!response.ok) return null;
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
   url = response.url || url;
-  let playlist = await response.text();
-  if (playlist.includes('#EXT-X-STREAM-INF')) {
-    const lines = playlist.split('\n').map((line) => line.trim());
-    const variantIndex = lines.findIndex(
-      (line, index) => line.startsWith('#EXT-X-STREAM-INF') && lines[index + 1] && !lines[index + 1].startsWith('#')
-    );
-    if (variantIndex === -1) return null;
-    url = new URL(lines[variantIndex + 1], url).href;
-    const variant = await request(url);
-    if (!variant.ok) return null;
-    url = variant.url || url;
-    playlist = await variant.text();
-  }
+  const playlist = await response.text();
+  if (!/^#EXT-X-STREAM-INF:/m.test(playlist)) return downloadHlsMedia(playlist, url, request, signal, report);
 
+  const lines = playlist.split('\n').map((line) => line.trim());
+  let lastError;
+  for (const [index, line] of lines.entries()) {
+    if (!line.startsWith('#EXT-X-STREAM-INF:')) continue;
+    const uri = lines[index + 1];
+    if (!uri || uri.startsWith('#')) continue;
+    signal.throwIfAborted();
+    try {
+      const variantUrl = new URL(uri, url).href;
+      const variant = await request(variantUrl);
+      if (!variant.ok) throw new Error(`HTTP ${variant.status}`);
+      const audio = await downloadHlsMedia(await variant.text(), variant.url || variantUrl, request, signal, report);
+      if (audio?.length) return audio;
+    } catch (error) {
+      signal.throwIfAborted();
+      lastError = error;
+    }
+  }
+  if (lastError) throw lastError;
+  return null;
+}
+
+async function downloadHlsMedia(playlist, url, request, signal, report) {
+  if (/^#EXT-X-STREAM-INF:/m.test(playlist)) return null;
+  if (
+    /^\s*#EXT-X-BYTERANGE:/m.test(playlist) ||
+    /^\s*#EXT-X-MAP:(?:(?:"[^"\r\n]*"|[^",\r\n])*,\s*)*BYTERANGE=/m.test(playlist)
+  ) {
+    throw new Error('hlsByteRangeUnsupported');
+  }
   if (playlist.includes('METHOD=SAMPLE-AES') || playlist.includes('com.apple.streamingkeydelivery')) return null;
   const segmentUrls = playlist
     .split('\n')
@@ -162,23 +182,17 @@ async function downloadHlsAudio(url, request, signal, report) {
   const initUri = /#EXT-X-MAP:URI="([^"]+)"/i.exec(playlist)?.[1];
   let initChunk;
   if (initUri) {
-    try {
-      const initResponse = await request(new URL(initUri, url).href);
-      if (!initResponse.ok) return null;
-      initChunk = new Uint8Array(await initResponse.arrayBuffer());
-    } catch (error) {
-      signal.throwIfAborted();
-      console.warn('HLS init segment fetch error:', error);
-      return null;
-    }
+    const initResponse = await request(new URL(initUri, url).href);
+    if (!initResponse.ok) throw new Error(`HTTP ${initResponse.status}`);
+    initChunk = new Uint8Array(await initResponse.arrayBuffer());
   }
 
   let receivedBytes = initChunk?.length || 0;
   let nextIndex = 0;
   let completed = 0;
-  let failed = false;
+  let segmentError;
   async function downloadSegments() {
-    while (nextIndex < segmentUrls.length && !signal.aborted && !failed) {
+    while (nextIndex < segmentUrls.length && !signal.aborted && !segmentError) {
       const index = nextIndex++;
       try {
         const segment = await request(segmentUrls[index]);
@@ -189,8 +203,7 @@ async function downloadHlsAudio(url, request, signal, report) {
         completed++;
         reportAudioProgress(report, receivedBytes, startTime, (completed / segmentUrls.length) * 70);
       } catch (error) {
-        if (!signal.aborted) console.warn(`Segment ${index} fetch failed:`, error);
-        failed = true;
+        segmentError ??= error;
       }
     }
   }
@@ -198,7 +211,7 @@ async function downloadHlsAudio(url, request, signal, report) {
   const concurrency = window.APP_CONFIG.HLS_CONCURRENCY || 6;
   await Promise.all(Array.from({ length: Math.min(concurrency, segmentUrls.length) }, downloadSegments));
   signal.throwIfAborted();
-  if (failed) return null;
+  if (segmentError) throw segmentError;
   if (initChunk) chunks.unshift(initChunk);
   return joinAudioChunks(chunks, receivedBytes);
 }
@@ -281,36 +294,42 @@ async function downloadTrack(track, index, total, subFolder, setMeta, downloadFo
     playable.sort((a, b) => scoreStream(b) - scoreStream(a));
 
     let audioBuffer = null;
+    let lastSourceError;
 
     for (const selected of playable) {
       signal.throwIfAborted();
 
-      const streamInfoUrl = new URL(selected.url);
-      if (track.track_authorization) {
-        streamInfoUrl.searchParams.set('track_authorization', track.track_authorization);
+      try {
+        const streamInfoUrl = new URL(selected.url);
+        if (track.track_authorization) {
+          streamInfoUrl.searchParams.set('track_authorization', track.track_authorization);
+        }
+
+        const streamResp = await window.requestSoundCloud(streamInfoUrl, signal);
+        if (!streamResp.ok) throw new Error(`HTTP ${streamResp.status}`);
+
+        const streamJson = await streamResp.json();
+        const audioCdnUrl = streamJson.url;
+        if (!audioCdnUrl) continue;
+
+        const protocol = selected.format?.protocol;
+        const isHls = protocol === 'hls' || (protocol !== 'progressive' && audioCdnUrl.includes('.m3u8'));
+        if (!isHls) {
+          const isMp3 = protocol === 'progressive' && selected.format?.mime_type === 'audio/mpeg';
+          audioBuffer = await downloadProgressiveAudio(audioCdnUrl, request, signal, isMp3 ? 100 : 70, report);
+        } else {
+          audioBuffer = await downloadHlsAudio(audioCdnUrl, request, signal, report);
+        }
+      } catch (error) {
+        signal.throwIfAborted();
+        lastSourceError = error;
       }
-
-      const streamResp = await window.requestSoundCloud(streamInfoUrl, signal);
-      if (!streamResp.ok) continue;
-
-      const streamJson = await streamResp.json();
-      const audioCdnUrl = streamJson.url;
-      if (!audioCdnUrl) continue;
-
-      const protocol = selected.format?.protocol;
-      const isHls = protocol === 'hls' || (protocol !== 'progressive' && audioCdnUrl.includes('.m3u8'));
-      if (!isHls) {
-        const isMp3 = protocol === 'progressive' && selected.format?.mime_type === 'audio/mpeg';
-        audioBuffer = await downloadProgressiveAudio(audioCdnUrl, request, signal, isMp3 ? 100 : 70, report);
-      } else {
-        audioBuffer = await downloadHlsAudio(audioCdnUrl, request, signal, report);
-      }
-      if (audioBuffer) break;
+      if (audioBuffer?.length) break;
     }
 
     signal.throwIfAborted();
-    if (!audioBuffer) {
-      report({ status: 'fail' });
+    if (!audioBuffer?.length) {
+      report({ status: 'fail', reason: lastSourceError?.message });
       return false;
     }
 
@@ -339,11 +358,11 @@ async function downloadTrack(track, index, total, subFolder, setMeta, downloadFo
       const cancelDecode = () => cancelled.reject(signal.reason);
       try {
         signal.throwIfAborted();
-        const abCopy = audioBuffer.buffer.slice(
-          audioBuffer.byteOffset,
-          audioBuffer.byteOffset + audioBuffer.byteLength
-        );
-        const decoding = actx.decodeAudioData(abCopy);
+        const input =
+          audioBuffer.byteOffset === 0 && audioBuffer.byteLength === audioBuffer.buffer.byteLength
+            ? audioBuffer.buffer
+            : audioBuffer.buffer.slice(audioBuffer.byteOffset, audioBuffer.byteOffset + audioBuffer.byteLength);
+        const decoding = actx.decodeAudioData(input);
         signal.addEventListener('abort', cancelDecode, { once: true });
         const decodedPcm = await Promise.race([decoding, cancelled.promise]);
         // Encode via Web Worker

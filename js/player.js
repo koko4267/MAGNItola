@@ -5,7 +5,6 @@ audio.volume = 1.0;
 
 let libraryTracks = [];
 let currentPlayingTrack = null;
-let selectedFromList = false;
 let isDraggingSeek = false;
 let isPointerDownOnSeek = false;
 
@@ -201,7 +200,7 @@ function createTrackItemElement(tr, index, topPx) {
 
   row.addEventListener('click', () => {
     selectedIndex = index;
-    playTrack(tr, true);
+    playTrack(tr);
   });
 
   return row;
@@ -274,9 +273,20 @@ function renderTrackList() {
   }
 }
 
-function playTrack(track, fromList = false) {
+function revealTrack(index) {
+  const container = document.getElementById('playerTrackList');
+  if (index < 0 || !container?.clientHeight) return;
+  const height = window.APP_CONFIG?.TRACK_ROW_HEIGHT_PX || 58;
+  const spacer = container.querySelector('.virtual-scroll-spacer');
+  const top = (spacer?.offsetTop || 0) + index * height;
+  if (top < container.scrollTop) container.scrollTop = top;
+  else if (top + height > container.scrollTop + container.clientHeight) {
+    container.scrollTop = top + height - container.clientHeight;
+  }
+}
+
+function playTrack(track) {
   if (!track) return;
-  selectedFromList = fromList;
   currentPlayingTrack = track;
 
   const playerLargeArtContainer = document.getElementById('playerLargeArtContainer');
@@ -336,6 +346,7 @@ function playTrack(track, fromList = false) {
     playerTotalTime.textContent = track.duration && track.duration > 0 ? window.formatTime(track.duration) : '0:00';
   }
 
+  revealTrack(libraryTracks.indexOf(track));
   renderTrackList();
 }
 
@@ -432,15 +443,10 @@ function initPlayerListeners() {
       if (!libraryTracks.length || !['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
       event.preventDefault();
       let index = selectedIndex;
-      if (event.key === 'Enter') return playTrack(libraryTracks[index], true);
+      if (event.key === 'Enter') return playTrack(libraryTracks[index]);
       index = Math.min(libraryTracks.length - 1, Math.max(0, index + (event.key === 'ArrowDown' ? 1 : -1)));
       selectedIndex = index;
-      const height = window.APP_CONFIG.TRACK_ROW_HEIGHT_PX;
-      const top = index * height;
-      if (top < playerTrackList.scrollTop) playerTrackList.scrollTop = top;
-      else if (top + height > playerTrackList.scrollTop + playerTrackList.clientHeight) {
-        playerTrackList.scrollTop = top + height - playerTrackList.clientHeight;
-      }
+      revealTrack(index);
       renderTrackList();
     });
     let scrollRafId = null;
@@ -459,15 +465,41 @@ function initPlayerListeners() {
 
   audio.addEventListener('play', updatePlaybackButton);
   const animation = document.getElementById('playbackAnimation');
-  audio.addEventListener('playing', () => {
-    if (audio.paused || audio.ended || audio.error || (animation.hidden && !selectedFromList)) return;
-    animation.hidden = false;
+  const gif = document.getElementById('playbackGif');
+  const animations = window.electronAPI?.listAnimations?.().catch(() => []);
+  let animationTrackPath = null;
+  let currentAnimation = null;
+  let playbackEvent = 0;
+  audio.addEventListener('playing', async () => {
+    const eventId = ++playbackEvent;
+    const files = await animations;
+    if (
+      eventId !== playbackEvent ||
+      !files?.length ||
+      !currentPlayingTrack ||
+      audio.paused ||
+      audio.ended ||
+      audio.error
+    )
+      return;
+    if (animationTrackPath !== currentPlayingTrack.filePath) {
+      const choices = files.length > 1 ? files.filter((name) => name !== currentAnimation) : files;
+      currentAnimation = choices[Math.floor(Math.random() * choices.length)];
+      animationTrackPath = currentPlayingTrack.filePath;
+      const isGif = /\.gif$/i.test(currentAnimation);
+      animation.hidden = isGif;
+      (isGif ? gif : animation).src = 'assets/animations/' + encodeURIComponent(currentAnimation);
+    }
+    gif.hidden = !animation.hidden;
+    if (animation.hidden) return;
     animation.play().catch((error) => {
       if (error.name !== 'AbortError') console.warn('Animation playback failed:', error);
     });
   });
   for (const event of ['pause', 'waiting', 'emptied', 'error', 'ended']) {
     audio.addEventListener(event, () => {
+      playbackEvent++;
+      gif.hidden = true;
       if (animation.paused === false) animation.pause();
     });
   }

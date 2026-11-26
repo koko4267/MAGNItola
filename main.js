@@ -313,6 +313,14 @@ async function findSoundCloudClientId(signal) {
 }
 
 function registerIpcHandlers() {
+  ipcMain.handle('list-animations', async (event) => {
+    if (!isTrustedSender(event)) return [];
+    const entries = await fs.promises.readdir(path.join(__dirname, 'assets', 'animations'), { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && /\.(mp4|webm|gif)$/i.test(entry.name))
+      .map((entry) => entry.name);
+  });
+
   ipcMain.handle('get-default-downloads', (event) => {
     if (!isTrustedSender(event)) return null;
     return app.getPath('downloads');

@@ -339,7 +339,7 @@ body {
   container-type: size;
 }
 
-#playbackAnimation {
+:is(#playbackAnimation, #playbackGif) {
   margin-left: auto;
   width: min(40%, 100cqh);
   height: 100%;
@@ -347,7 +347,7 @@ body {
 }
 
 .queue-box,
-#playbackAnimation {
+:is(#playbackAnimation, #playbackGif) {
   border-top: 1px solid var(--border-dark);
   border-left: 1px solid var(--border-dark);
   border-bottom: 1px solid var(--border-light);

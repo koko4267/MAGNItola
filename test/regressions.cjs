@@ -868,3 +868,29 @@ test('a stored HLS range error renders in the current queue language', () => {
     assert.equal(row.children[0].textContent, app.LOCALES[lang].hlsByteRangeUnsupported);
   }
 });
+
+test('changing tracks rotates animations while resuming keeps the current one', async () => {
+  const listeners = {};
+  const ctx = renderer(['player'], {
+    Audio: class {
+      addEventListener(name, callback) {
+        listeners[name] = callback;
+      }
+    },
+    electronAPI: { listAnimations: async () => ['first.mp4', 'second.gif'] }
+  });
+  const video = ctx.document.getElementById('playbackAnimation');
+  const gif = ctx.document.getElementById('playbackGif');
+  video.play = async () => {};
+  ctx.initPlayerListeners();
+  const selected = () => (video.hidden ? gif.src : video.src);
+  vm.runInContext("currentPlayingTrack = { filePath: 'a.mp3' }", ctx);
+  await listeners.playing();
+  const first = selected();
+  assert.match(first, /assets\/animations\/(first\.mp4|second\.gif)$/);
+  await listeners.playing();
+  assert.equal(selected(), first);
+  vm.runInContext("currentPlayingTrack = { filePath: 'b.mp3' }", ctx);
+  await listeners.playing();
+  assert.notEqual(selected(), first);
+});

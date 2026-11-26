@@ -80,6 +80,7 @@
       "css/**/*",
       "js/**/*",
       "assets/animations/**/*",
+      "!assets/animations/**/*.txt",
       "assets/images/**/*",
       "!assets/images/docs/**/*",
       "!assets/images/installer/**/*",

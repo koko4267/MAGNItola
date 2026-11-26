@@ -1,0 +1,16 @@
+Шаблон для новых анимаций MAGNItola
+
+Запусти PowerShell из корня проекта. Нужен FFmpeg с кодировщиком libaom-av1. Подставь путь к исходному GIF или MP4 и имя нового файла.
+
+Сначала подбери кадр примерно 7:8. Просмотри начало, середину и конец клипа: лицо, руки и важные движения должны оставаться видны. В шаблоне crop=ширина:высота:x:y задаёт размер кадра и смещение от левого верхнего угла. Если исходник уже подходит, оставь $crop пустым. Если при обрезке теряется важная часть кадра, подставь pad вместо crop и добавь поля.
+
+$source = 'C:\путь\к\исходнику.gif'
+$output = 'assets/animations/novaya.mp4'
+$crop = '' # Например, для исходника 500×374 можно начать с 'crop=326:374:90:0,'
+
+$filter = "[0:v]${crop}scale=70:80:flags=area,format=rgb24,split[small][colors];[colors]palettegen=max_colors=24:reserve_transparent=0[palette];[small][palette]paletteuse=dither=bayer:bayer_scale=2,scale=225:257:flags=neighbor,setsar=1,format=yuv420p[out]"
+ffmpeg -hide_banner -loglevel warning -n -i $source -filter_complex $filter -map '[out]' -map '0:a?' -fps_mode passthrough -enc_time_base demux -c:v libaom-av1 -cpu-used 5 -crf 29 -b:v 0 -c:a copy -movflags +faststart $output
+
+Здесь 70×80 задаёт размер крупных пикселей, а Bayer с палитрой до 24 цветов даёт вид старой GIF. Проверь, что команда ниже выводит av1,225,257, и посмотри готовый клип целиком.
+
+ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 $output

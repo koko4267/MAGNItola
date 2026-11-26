@@ -888,7 +888,14 @@ test('changing tracks rotates animations while resuming keeps the current one', 
   await listeners.playing();
   const first = selected();
   assert.match(first, /assets\/animations\/(first\.mp4|second\.gif)$/);
+  const idle = ctx.document.getElementById('idleGif');
+  assert.equal(idle.hidden, true);
+  listeners.waiting();
+  assert.equal(idle.hidden, false);
+  assert.equal(video.hidden, true);
+  assert.equal(gif.hidden, true);
   await listeners.playing();
+  assert.equal(idle.hidden, true);
   assert.equal(selected(), first);
   vm.runInContext("currentPlayingTrack = { filePath: 'b.mp3' }", ctx);
   await listeners.playing();

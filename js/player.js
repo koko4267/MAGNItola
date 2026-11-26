@@ -466,6 +466,7 @@ function initPlayerListeners() {
   audio.addEventListener('play', updatePlaybackButton);
   const animation = document.getElementById('playbackAnimation');
   const gif = document.getElementById('playbackGif');
+  const idleGif = document.getElementById('idleGif');
   const animations = window.electronAPI?.listAnimations?.().catch(() => []);
   let animationTrackPath = null;
   let currentAnimation = null;
@@ -487,9 +488,10 @@ function initPlayerListeners() {
       currentAnimation = choices[Math.floor(Math.random() * choices.length)];
       animationTrackPath = currentPlayingTrack.filePath;
       const isGif = /\.gif$/i.test(currentAnimation);
-      animation.hidden = isGif;
       (isGif ? gif : animation).src = 'assets/animations/' + encodeURIComponent(currentAnimation);
     }
+    idleGif.hidden = true;
+    animation.hidden = /\.gif$/i.test(currentAnimation);
     gif.hidden = !animation.hidden;
     if (animation.hidden) return;
     animation.play().catch((error) => {
@@ -499,6 +501,8 @@ function initPlayerListeners() {
   for (const event of ['pause', 'waiting', 'emptied', 'error', 'ended']) {
     audio.addEventListener(event, () => {
       playbackEvent++;
+      idleGif.hidden = false;
+      animation.hidden = true;
       gif.hidden = true;
       if (animation.paused === false) animation.pause();
     });

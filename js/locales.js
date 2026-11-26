@@ -178,7 +178,7 @@ function setLanguage(lang) {
   const playerLargeArtPlaceholderLabel = document.getElementById('playerLargeArtPlaceholderLabel');
 
   if (langLabel) langLabel.textContent = lang.toUpperCase();
-  if (flagImg) flagImg.src = lang === 'ru' ? 'ru.png' : 'us.png';
+  if (flagImg) flagImg.src = lang === 'ru' ? 'assets/images/ru.png' : 'assets/images/us.png';
   if (lblUrlPrompt) lblUrlPrompt.textContent = L.urlPrompt;
   if (inputUrl) inputUrl.placeholder = L.placeholder;
   if (lblCurrentStatus) lblCurrentStatus.textContent = L.currentStatus;

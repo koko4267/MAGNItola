@@ -411,16 +411,14 @@ function registerIpcHandlers() {
 }
 
 function createWindow() {
-  const iconPath = path.join(__dirname, 'icon.ico');
+  const iconPath = path.join(__dirname, 'assets', 'images', 'icon.ico');
 
   mainWindow = new BrowserWindow({
     width: 950,
     height: 600,
-    minWidth: 950,
-    minHeight: 600,
-    resizable: true,
-    maximizable: true,
-    fullscreenable: true,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
     title: 'MAGNItola',
     icon: iconPath,
     show: false,

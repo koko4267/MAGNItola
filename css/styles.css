@@ -330,12 +330,32 @@ body {
 }
 
 /* Download Queue UI (2.1) */
-.queue-box {
+.queue-layout {
+  flex: 1;
+  min-height: 70px;
   margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  container-type: size;
+}
+
+#playbackAnimation {
+  margin-left: auto;
+  width: min(40%, 100cqh);
+  height: 100%;
+  object-fit: cover;
+}
+
+.queue-box,
+#playbackAnimation {
   border-top: 1px solid var(--border-dark);
   border-left: 1px solid var(--border-dark);
   border-bottom: 1px solid var(--border-light);
   border-right: 1px solid var(--border-light);
+}
+
+.queue-box {
+  min-width: 0;
   background-color: var(--bg-panel);
   display: flex;
   flex-direction: column;

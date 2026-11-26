@@ -53,13 +53,13 @@
           ]
         }
       ],
-      "icon": "icon.ico",
+      "icon": "assets/images/icon.ico",
       "artifactName": "MAGNItola-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
-      "installerSidebar": "installer/wizard-sidebar.bmp",
-      "uninstallerSidebar": "installer/wizard-sidebar.bmp",
+      "installerSidebar": "assets/images/installer/wizard-sidebar.bmp",
+      "uninstallerSidebar": "assets/images/installer/wizard-sidebar.bmp",
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
@@ -79,11 +79,10 @@
       "lame.min.js",
       "css/**/*",
       "js/**/*",
-      "magnitolalogo.jpg",
-      "synclinelogo.jpg",
-      "ru.png",
-      "us.png",
-      "icon.ico",
+      "assets/animations/**/*",
+      "assets/images/**/*",
+      "!assets/images/docs/**/*",
+      "!assets/images/installer/**/*",
       "fonts/**/*"
     ]
   }

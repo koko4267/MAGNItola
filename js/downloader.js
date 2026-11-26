@@ -20,24 +20,17 @@ function getQueueStatusInfo(status) {
 }
 
 function renderDownloadQueue() {
-  const queueBox = document.getElementById('downloadQueueBox');
   const queueList = document.getElementById('queueListContainer');
   const queueCounter = document.getElementById('queueHeaderCount');
-  if (!queueBox || !queueList) return;
+  if (!queueList) return;
 
-  if (downloadQueue.length === 0) {
-    queueBox.style.display = 'none';
-    queueList.replaceChildren();
-    return;
-  }
-
-  queueBox.style.display = 'flex';
   const total = downloadQueue.length;
   if (queueCounter) {
     queueCounter.textContent = `${completedCount}/${total}`;
   }
 
   queueList.replaceChildren();
+  if (!total) return;
   const fragment = document.createDocumentFragment();
 
   for (let i = 0; i < total; i++) {

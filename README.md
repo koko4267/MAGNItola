@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="magnitolalogo.jpg" width="180" alt="MAGNItola" />
+  <img src="assets/images/magnitolalogo.jpg" width="180" alt="MAGNItola" />
 </p>
 
 <p align="center">
-  <img src="demopic.jpg" alt="MAGNItola Interface" />
+  <img src="assets/images/docs/demopic.jpg" alt="MAGNItola Interface" />
 </p>
 
 ---

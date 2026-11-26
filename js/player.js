@@ -5,6 +5,7 @@ audio.volume = 1.0;
 
 let libraryTracks = [];
 let currentPlayingTrack = null;
+let selectedFromList = false;
 let isDraggingSeek = false;
 let isPointerDownOnSeek = false;
 
@@ -200,7 +201,7 @@ function createTrackItemElement(tr, index, topPx) {
 
   row.addEventListener('click', () => {
     selectedIndex = index;
-    playTrack(tr);
+    playTrack(tr, true);
   });
 
   return row;
@@ -273,8 +274,9 @@ function renderTrackList() {
   }
 }
 
-function playTrack(track) {
+function playTrack(track, fromList = false) {
   if (!track) return;
+  selectedFromList = fromList;
   currentPlayingTrack = track;
 
   const playerLargeArtContainer = document.getElementById('playerLargeArtContainer');
@@ -430,7 +432,7 @@ function initPlayerListeners() {
       if (!libraryTracks.length || !['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
       event.preventDefault();
       let index = selectedIndex;
-      if (event.key === 'Enter') return playTrack(libraryTracks[index]);
+      if (event.key === 'Enter') return playTrack(libraryTracks[index], true);
       index = Math.min(libraryTracks.length - 1, Math.max(0, index + (event.key === 'ArrowDown' ? 1 : -1)));
       selectedIndex = index;
       const height = window.APP_CONFIG.TRACK_ROW_HEIGHT_PX;
@@ -456,6 +458,19 @@ function initPlayerListeners() {
   }
 
   audio.addEventListener('play', updatePlaybackButton);
+  const animation = document.getElementById('playbackAnimation');
+  audio.addEventListener('playing', () => {
+    if (audio.paused || audio.ended || audio.error || (animation.hidden && !selectedFromList)) return;
+    animation.hidden = false;
+    animation.play().catch((error) => {
+      if (error.name !== 'AbortError') console.warn('Animation playback failed:', error);
+    });
+  });
+  for (const event of ['pause', 'waiting', 'emptied', 'error', 'ended']) {
+    audio.addEventListener(event, () => {
+      if (animation.paused === false) animation.pause();
+    });
+  }
   audio.addEventListener('pause', updatePlaybackButton);
   audio.addEventListener('error', updatePlaybackButton);
 

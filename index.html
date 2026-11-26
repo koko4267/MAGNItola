@@ -8,7 +8,7 @@
       content="default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' media: data:; font-src 'self'; connect-src https:; object-src 'none'; base-uri 'none'; form-action 'none';"
     />
     <title>MAGNItola</title>
-    <link rel="icon" type="image/x-icon" href="icon.ico" />
+    <link rel="icon" type="image/x-icon" href="assets/images/icon.ico" />
     <link rel="stylesheet" href="css/styles.css" />
   </head>
   <body>
@@ -41,7 +41,7 @@
 
           <div class="download-card">
             <div class="album-art-box" id="albumArtBox">
-              <img id="albumArtIcon" src="magnitolalogo.jpg" alt="MAGNItola" />
+              <img id="albumArtIcon" src="assets/images/magnitolalogo.jpg" alt="MAGNItola" />
               <img id="albumArtImg" alt="" hidden />
             </div>
 
@@ -74,7 +74,7 @@
               class="syncline-widget"
               title="Visit Syncline (https://sync-line.pages.dev/)"
             >
-              <img src="synclinelogo.jpg" alt="Syncline Logo" class="syncline-logo-img" />
+              <img src="assets/images/synclinelogo.jpg" alt="Syncline Logo" class="syncline-logo-img" />
               <span class="syncline-text">try syncline</span>
             </a>
 
@@ -92,19 +92,31 @@
                 aria-label="Switch language / Сменить язык"
                 title="Switch language / Сменить язык"
               >
-                <img class="flag-icon" id="flagImg" src="us.png" alt="Flag" />
+                <img class="flag-icon" id="flagImg" src="assets/images/us.png" alt="Flag" />
                 <span id="langLabel">EN</span>
               </button>
             </div>
           </div>
 
           <!-- Download queue -->
-          <div class="queue-box" id="downloadQueueBox" data-initial-hidden>
-            <div class="queue-header-row">
-              <span id="queueHeaderTitle">Download queue</span>
-              <span id="queueHeaderCount">0/0</span>
+          <div class="queue-layout">
+            <div class="queue-box" id="downloadQueueBox">
+              <div class="queue-header-row">
+                <span id="queueHeaderTitle">Download queue</span>
+                <span id="queueHeaderCount">0/0</span>
+              </div>
+              <div class="queue-list-container" id="queueListContainer"></div>
             </div>
-            <div class="queue-list-container" id="queueListContainer"></div>
+            <video
+              id="playbackAnimation"
+              src="assets/animations/muzika.mp4"
+              muted
+              loop
+              playsinline
+              preload="none"
+              aria-hidden="true"
+              hidden
+            ></video>
           </div>
         </div>
       </div>

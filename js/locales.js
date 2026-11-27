@@ -16,6 +16,11 @@ window.LOCALES = {
     playPause: 'Play or pause',
     next: 'Next track',
     seek: 'Seek',
+    volume: 'Volume',
+    shuffle: 'Shuffle',
+    repeatAll: 'Repeat all',
+    repeatOne: 'Repeat one track',
+    repeatOff: 'Repeat off',
     library: 'Library',
     language: 'Switch language',
     urlPrompt: 'Paste link:',
@@ -80,6 +85,11 @@ window.LOCALES = {
     playPause: 'Воспроизведение или пауза',
     next: 'Следующий трек',
     seek: 'Перемотка',
+    volume: 'Громкость',
+    shuffle: 'Случайный порядок',
+    repeatAll: 'Повтор всех треков',
+    repeatOne: 'Повтор одного трека',
+    repeatOff: 'Повтор выключен',
     library: 'Библиотека',
     language: 'Сменить язык',
     urlPrompt: 'Вставьте ссылку:',
@@ -149,6 +159,8 @@ function setLanguage(lang) {
     btnPlayerPlay: L.playPause,
     btnPlayerNext: L.next,
     playerSeekInput: L.seek,
+    playerVolume: L.volume,
+    btnShuffle: L.shuffle,
     playerTrackList: L.library,
     btnToggleLang: L.language,
     btnBrowseFolder: L.browse,
@@ -161,6 +173,8 @@ function setLanguage(lang) {
     control.setAttribute('aria-label', label);
   }
   document.getElementById('saveFolderLabel').textContent = L.saveLocation;
+  document.getElementById('volumeLabel').textContent = L.volume;
+  window.updatePlayerModes?.();
   window.updatePlaybackButton?.();
 
   const langLabel = document.getElementById('langLabel');

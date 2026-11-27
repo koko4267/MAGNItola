@@ -321,6 +321,14 @@ function registerIpcHandlers() {
       .map((entry) => entry.name);
   });
 
+  ipcMain.handle('read-animation-gif', async (event, name) => {
+    if (!isTrustedSender(event) || typeof name !== 'string' || !/\.gif$/i.test(name)) return null;
+    const directory = path.join(__dirname, 'assets', 'animations');
+    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    if (!entries.some((entry) => entry.isFile() && entry.name === name)) return null;
+    return fs.promises.readFile(path.join(directory, name));
+  });
+
   ipcMain.handle('get-default-downloads', (event) => {
     if (!isTrustedSender(event)) return null;
     return app.getPath('downloads');

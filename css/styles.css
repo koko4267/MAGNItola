@@ -580,6 +580,7 @@ body {
 }
 
 .large-art-container {
+  min-height: 0;
   padding: 10px;
   background-color: var(--bg-panel);
   border-bottom: 1px solid var(--border-shadow);
@@ -590,8 +591,8 @@ body {
 }
 
 .large-art-box {
-  width: 170px;
   height: 170px;
+  min-height: 0;
   max-width: 100%;
   aspect-ratio: 1;
   background-color: var(--border-dark);
@@ -632,6 +633,7 @@ body {
 }
 
 .large-art-details {
+  flex: none;
   width: 100%;
   text-align: center;
   min-width: 0;
@@ -655,6 +657,7 @@ body {
 }
 
 .player-controls-panel {
+  flex: none;
   padding: 8px 10px;
   background-color: var(--bg-panel);
   border-bottom: 1px solid var(--border-shadow);
@@ -687,6 +690,58 @@ body {
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+.playback-btn svg {
+  width: 16px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.playback-btn[aria-pressed='true'],
+#btnRepeat[data-active='true'] {
+  background: var(--active-surface);
+  color: var(--accent-gold);
+  border-color: var(--border-dark) var(--border-light) var(--border-light) var(--border-dark);
+}
+
+#repeatOneBadge {
+  font-size: 10px;
+}
+
+.player-volume-row {
+  width: 184px;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 4ch;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+
+#volumeValue {
+  text-align: right;
+  color: var(--accent-gold);
+}
+
+#playerVolume {
+  appearance: none;
+  width: 100%;
+  height: 14px;
+  border: 1px solid;
+  border-color: var(--inset-shadow) var(--border-light) var(--border-light) var(--inset-shadow);
+  background: linear-gradient(to right, var(--green-bar) var(--level, 100%), var(--border-dark) var(--level, 100%));
+  cursor: pointer;
+}
+
+#playerVolume::-webkit-slider-thumb {
+  appearance: none;
+  width: 7px;
+  height: 12px;
+  background: var(--text-main);
+  border: 1px solid var(--btn-active);
 }
 
 .seek-bar-track-wrapper {
@@ -728,6 +783,8 @@ body {
 
 .seek-time-row {
   display: flex;
+  align-items: center;
+  gap: 6px;
   justify-content: space-between;
   color: var(--accent-gold);
 }
@@ -735,6 +792,8 @@ body {
 /* Virtualized Track List (5.1) */
 .track-list-container {
   flex: 1;
+  /* Four 58px track slots plus the list padding. */
+  min-height: 244px;
   overflow-y: auto;
   padding: 6px;
   background-color: #1f251c;

@@ -2,6 +2,24 @@
 
 const audio = new Audio();
 audio.volume = 1.0;
+let shuffleEnabled = false;
+let repeatMode = 'repeatAll';
+const shuffleHistory = [];
+const shufflePlayed = new Set();
+
+function resetShuffle() {
+  shuffleHistory.length = 0;
+  shufflePlayed.clear();
+}
+
+function updatePlayerModes() {
+  document.getElementById('btnShuffle').setAttribute('aria-pressed', String(shuffleEnabled));
+  const repeat = document.getElementById('btnRepeat');
+  repeat.title = window.L[repeatMode];
+  repeat.setAttribute('aria-label', repeat.title);
+  repeat.setAttribute('data-active', String(repeatMode !== 'repeatOff'));
+  document.getElementById('repeatOneBadge').hidden = repeatMode !== 'repeatOne';
+}
 
 let libraryTracks = [];
 let currentPlayingTrack = null;
@@ -96,6 +114,7 @@ async function scanAndLoadLibrary(folder) {
   pendingScan = scan;
   if (selectedFolder !== folder.toLowerCase()) {
     selectedFolder = folder.toLowerCase();
+    resetShuffle();
     libraryTracks = [];
     selectedIndex = 0;
     renderTrackList();
@@ -285,8 +304,14 @@ function revealTrack(index) {
   }
 }
 
-function playTrack(track) {
+function playTrack(track, rememberPrevious = true) {
   if (!track) return;
+  if (shuffleEnabled) {
+    if (rememberPrevious && currentPlayingTrack && currentPlayingTrack.filePath !== track.filePath) {
+      shuffleHistory.push(currentPlayingTrack.filePath);
+    }
+    shufflePlayed.add(track.filePath);
+  }
   currentPlayingTrack = track;
 
   const playerLargeArtContainer = document.getElementById('playerLargeArtContainer');
@@ -352,17 +377,33 @@ function playTrack(track) {
 
 function togglePlay() {
   if (!currentPlayingTrack && libraryTracks.length > 0) {
-    playTrack(libraryTracks[0]);
+    nextTrack();
     return;
   }
   if (!currentPlayingTrack) return;
 
+  if (audio.ended && repeatMode === 'repeatOff') {
+    if (shuffleEnabled) return nextTrack();
+    if (libraryTracks.length) return playTrack(libraryTracks[0]);
+  }
   if (audio.paused) startPlayback();
   else audio.pause();
 }
 
 function prevTrack() {
   if (libraryTracks.length === 0) return;
+  if (shuffleEnabled) {
+    while (shuffleHistory.length) {
+      const path = shuffleHistory.pop();
+      const track = libraryTracks.find((item) => item.filePath === path);
+      if (track) {
+        shufflePlayed.delete(currentPlayingTrack?.filePath);
+        return playTrack(track, false);
+      }
+    }
+    if (currentPlayingTrack) return playTrack(currentPlayingTrack);
+    return nextTrack();
+  }
   if (!currentPlayingTrack) {
     playTrack(libraryTracks[0]);
     return;
@@ -372,13 +413,21 @@ function prevTrack() {
   playTrack(libraryTracks[nextIdx]);
 }
 
-function nextTrack() {
+function nextTrack(automatic = false) {
   if (libraryTracks.length === 0) return;
-  if (!currentPlayingTrack) {
-    playTrack(libraryTracks[0]);
+  const idx = libraryTracks.findIndex((t) => t.filePath === currentPlayingTrack?.filePath);
+  if (shuffleEnabled) {
+    let candidates = libraryTracks.filter((track) => !shufflePlayed.has(track.filePath));
+    if (!candidates.length) {
+      if (automatic && repeatMode === 'repeatOff') return;
+      resetShuffle();
+      candidates = libraryTracks.filter((_, index) => index !== idx);
+      if (!candidates.length) candidates = libraryTracks;
+    }
+    playTrack(candidates[Math.floor(Math.random() * candidates.length)]);
     return;
   }
-  const idx = libraryTracks.findIndex((t) => t.filePath === currentPlayingTrack.filePath);
+  if (automatic && repeatMode === 'repeatOff' && idx === libraryTracks.length - 1) return;
   const nextIdx = (idx + 1) % libraryTracks.length;
   playTrack(libraryTracks[nextIdx]);
 }
@@ -435,7 +484,26 @@ function initPlayerListeners() {
 
   if (btnPlayerPlay) btnPlayerPlay.addEventListener('click', togglePlay);
   if (btnPlayerPrev) btnPlayerPrev.addEventListener('click', prevTrack);
-  if (btnPlayerNext) btnPlayerNext.addEventListener('click', nextTrack);
+  if (btnPlayerNext) btnPlayerNext.addEventListener('click', () => nextTrack());
+  document.getElementById('btnShuffle').addEventListener('click', () => {
+    shuffleEnabled = !shuffleEnabled;
+    resetShuffle();
+    if (shuffleEnabled && currentPlayingTrack) shufflePlayed.add(currentPlayingTrack.filePath);
+    updatePlayerModes();
+  });
+  document.getElementById('btnRepeat').addEventListener('click', () => {
+    repeatMode = { repeatAll: 'repeatOne', repeatOne: 'repeatOff', repeatOff: 'repeatAll' }[repeatMode];
+    audio.loop = repeatMode === 'repeatOne';
+    updatePlayerModes();
+  });
+  const volume = document.getElementById('playerVolume');
+  volume.addEventListener('input', () => {
+    audio.volume = Number(volume.value) / 100;
+    const level = volume.value + '%';
+    volume.style.setProperty('--level', level);
+    volume.setAttribute('aria-valuetext', level);
+    document.getElementById('volumeValue').textContent = level;
+  });
 
   if (playerTrackList) {
     playerTrackList.addEventListener('focus', renderTrackList);
@@ -471,6 +539,36 @@ function initPlayerListeners() {
   let animationTrackPath = null;
   let currentAnimation = null;
   let playbackEvent = 0;
+  let decoder = null;
+  let nextFrame = 0;
+
+  async function playGif(eventId) {
+    if (!decoder) {
+      const data = await window.electronAPI.readAnimationGif(currentAnimation);
+      if (eventId !== playbackEvent) return;
+      decoder = new ImageDecoder({ type: 'image/gif', data });
+    }
+    await decoder.tracks.ready;
+    const context = gif.getContext('2d');
+    while (eventId === playbackEvent) {
+      const { image } = await decoder.decode({ frameIndex: nextFrame });
+      const duration = image.duration / 1000;
+      try {
+        if (eventId !== playbackEvent) return;
+        if (gif.width !== image.displayWidth) gif.width = image.displayWidth;
+        if (gif.height !== image.displayHeight) gif.height = image.displayHeight;
+        context.clearRect(0, 0, gif.width, gif.height);
+        context.drawImage(image, 0, 0);
+        const frames = decoder.tracks.selectedTrack.frameCount;
+        if (frames === 1) return;
+        nextFrame = (nextFrame + 1) % frames;
+      } finally {
+        image.close();
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.max(10, duration)));
+    }
+  }
+
   audio.addEventListener('playing', async () => {
     const eventId = ++playbackEvent;
     const files = await animations;
@@ -487,19 +585,28 @@ function initPlayerListeners() {
       const choices = files.length > 1 ? files.filter((name) => name !== currentAnimation) : files;
       currentAnimation = choices[Math.floor(Math.random() * choices.length)];
       animationTrackPath = currentPlayingTrack.filePath;
-      const isGif = /\.gif$/i.test(currentAnimation);
-      (isGif ? gif : animation).src = 'assets/animations/' + encodeURIComponent(currentAnimation);
+      decoder?.close();
+      decoder = null;
+      nextFrame = 0;
+      if (/\.gif$/i.test(currentAnimation)) gif.getContext('2d').clearRect(0, 0, gif.width, gif.height);
+      else animation.src = 'assets/animations/' + encodeURIComponent(currentAnimation);
     }
     idleGif.hidden = true;
     animation.hidden = /\.gif$/i.test(currentAnimation);
     gif.hidden = !animation.hidden;
-    if (animation.hidden) return;
-    animation.play().catch((error) => {
-      if (error.name !== 'AbortError') console.warn('Animation playback failed:', error);
+    const playback = animation.hidden ? playGif(eventId) : animation.play();
+    playback.catch((error) => {
+      if (eventId === playbackEvent && error.name !== 'AbortError') console.warn('Animation playback failed:', error);
     });
   });
-  for (const event of ['pause', 'waiting', 'emptied', 'error', 'ended']) {
+  audio.addEventListener('pause', () => {
+    playbackEvent++;
+    if (animation.paused === false) animation.pause();
+    updatePlaybackButton();
+  });
+  for (const event of ['waiting', 'emptied', 'error', 'ended']) {
     audio.addEventListener(event, () => {
+      if (event === 'waiting' && audio.paused) return;
       playbackEvent++;
       idleGif.hidden = false;
       animation.hidden = true;
@@ -507,11 +614,11 @@ function initPlayerListeners() {
       if (animation.paused === false) animation.pause();
     });
   }
-  audio.addEventListener('pause', updatePlaybackButton);
   audio.addEventListener('error', updatePlaybackButton);
 
   audio.addEventListener('ended', () => {
-    nextTrack();
+    updatePlaybackButton();
+    nextTrack(true);
   });
 
   audio.addEventListener('loadedmetadata', updateDurationDisplay);

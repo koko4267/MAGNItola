@@ -600,6 +600,39 @@ test('a rejected playback request leaves the play button available for retry', a
   assert.equal(button.textContent, '▶');
 });
 
+test('shuffle visits each track, goes back through history and stops when repeat is off', () => {
+  const app = renderer(['locales', 'player'], {
+    Audio: class extends EventTarget {
+      async play() {}
+    }
+  });
+  vm.runInContext("libraryTracks = ['a', 'b', 'c'].map(filePath => ({ filePath }))", app);
+  app.initPlayerListeners();
+  const button = (id) => app.document.getElementById(id);
+  const source = () => vm.runInContext('audio.src', app);
+  const ended = () => vm.runInContext('audio', app).dispatchEvent(new Event('ended'));
+  button('btnRepeat').click();
+  assert.equal(vm.runInContext('audio.loop', app), true);
+  button('btnRepeat').click();
+  assert.equal(vm.runInContext('audio.loop', app), false);
+  button('btnShuffle').click();
+  button('btnPlayerPlay').click();
+  const first = source();
+  ended();
+  assert.notEqual(source(), first);
+  button('btnPlayerPrev').click();
+  assert.equal(source(), first);
+  ended();
+  const second = source();
+  ended();
+  const third = source();
+  assert.equal(new Set([first, second, third]).size, 3);
+  ended();
+  assert.equal(source(), third);
+  button('btnPlayerNext').click();
+  assert.notEqual(source(), third);
+});
+
 test('overlapping library and player requests share a single cover read', async () => {
   let reads = 0;
   let reply;
@@ -877,19 +910,31 @@ test('changing tracks rotates animations while resuming keeps the current one', 
         listeners[name] = callback;
       }
     },
-    electronAPI: { listAnimations: async () => ['first.mp4', 'second.gif'] }
+    electronAPI: { listAnimations: async () => ['first.mp4', 'second.webm'] }
   });
   const video = ctx.document.getElementById('playbackAnimation');
   const gif = ctx.document.getElementById('playbackGif');
-  video.play = async () => {};
+  video.play = async () => {
+    video.paused = false;
+  };
+  video.pause = () => {
+    video.paused = true;
+  };
   ctx.initPlayerListeners();
   const selected = () => (video.hidden ? gif.src : video.src);
   vm.runInContext("currentPlayingTrack = { filePath: 'a.mp3' }", ctx);
   await listeners.playing();
   const first = selected();
-  assert.match(first, /assets\/animations\/(first\.mp4|second\.gif)$/);
+  assert.match(first, /assets\/animations\/(first\.mp4|second\.webm)$/);
   const idle = ctx.document.getElementById('idleGif');
   assert.equal(idle.hidden, true);
+  listeners.pause();
+  assert.equal(video.paused, true);
+  assert.equal(video.hidden, false);
+  assert.equal(idle.hidden, true);
+  await listeners.playing();
+  assert.equal(video.paused, false);
+  assert.equal(selected(), first);
   listeners.waiting();
   assert.equal(idle.hidden, false);
   assert.equal(video.hidden, true);
@@ -900,4 +945,40 @@ test('changing tracks rotates animations while resuming keeps the current one', 
   vm.runInContext("currentPlayingTrack = { filePath: 'b.mp3' }", ctx);
   await listeners.playing();
   assert.notEqual(selected(), first);
+});
+
+test('a paused GIF keeps its displayed frame and resumes at the next frame', async () => {
+  const listeners = {};
+  const frames = [];
+  const timers = [];
+  const ctx = renderer(['player'], {
+    Audio: class {
+      addEventListener(name, callback) {
+        listeners[name] = callback;
+      }
+    },
+    electronAPI: { listAnimations: async () => ['loop.gif'], readAnimationGif: async () => new Uint8Array() },
+    ImageDecoder: class {
+      tracks = { ready: Promise.resolve(), selectedTrack: { frameCount: 3 } };
+      async decode({ frameIndex }) {
+        return { image: { frameIndex, displayWidth: 10, displayHeight: 10, duration: 100000, close() {} } };
+      }
+    },
+    setTimeout: (callback) => timers.push(callback)
+  });
+  const gif = ctx.document.getElementById('playbackGif');
+  gif.getContext = () => ({ clearRect() {}, drawImage: (image) => frames.push(image.frameIndex) });
+  ctx.initPlayerListeners();
+  vm.runInContext("currentPlayingTrack = { filePath: 'a.mp3' }", ctx);
+  await listeners.playing();
+  await new Promise(setImmediate);
+  listeners.pause();
+  timers.shift()();
+  await new Promise(setImmediate);
+  assert.equal(gif.hidden, false);
+  assert.equal(ctx.document.getElementById('idleGif').hidden, true);
+  assert.deepEqual(frames, [0]);
+  await listeners.playing();
+  await new Promise(setImmediate);
+  assert.deepEqual(frames, [0, 1]);
 });
